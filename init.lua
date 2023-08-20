@@ -18,3 +18,14 @@ if not vim.loop.fs_stat(lazypath) then
   })
 end
 vim.opt.rtp:prepend(lazypath)
+
+-- Load packages.
+require("lazy").setup({
+  {"pmizio/typescript-tools.nvim",
+   dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
+   opts = {},
+  },
+  "tpope/vim-vinegar",
+  "junegunn/fzf",
+  "junegunn/fzf.vim",
+})

@@ -1,0 +1,9 @@
+{
+  "fzf": { "branch": "master", "commit": "cf552b5f3b1c52df014904dd82a7885f52f070bc" },
+  "fzf.vim": { "branch": "master", "commit": "811f34b70b60b4df2997e3ba8cd109e7d06d683b" },
+  "lazy.nvim": { "branch": "main", "commit": "dac844ed617dda4f9ec85eb88e9629ad2add5e05" },
+  "nvim-lspconfig": { "branch": "master", "commit": "67f151e84daddc86cc65f5d935e592f76b9f4496" },
+  "plenary.nvim": { "branch": "master", "commit": "267282a9ce242bbb0c5dc31445b6d353bed978bb" },
+  "typescript-tools.nvim": { "branch": "master", "commit": "3b05146d96b7c3d86e5f540d9ac871823e318d5a" },
+  "vim-vinegar": { "branch": "master", "commit": "bb1bcddf43cfebe05eb565a84ab069b357d0b3d6" }
+}
