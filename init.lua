@@ -1,4 +1,46 @@
--- Download lazy.vim
+-- Package-agnostic configuration.
+
+-- No vi compatibility
+vim.opt.compatible = false
+
+-- Enables hidden buffers
+vim.opt.hidden = true
+
+-- No syntax highlighting
+vim.cmd("syntax off")
+
+-- No filetype detection
+vim.cmd("filetype off")
+
+-- Copy indent from the previous line
+vim.opt.autoindent = true
+
+-- Use spaces instead of tabs.
+vim.opt.expandtab = true
+
+-- 4 spaces per tab
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+
+-- No highlighting when searching
+vim.opt.hlsearch = false
+
+-- 80 characters per line (also controls wrapping by 'gq').
+vim.opt.textwidth = 80
+-- But don't auto-wrap text, only comments and 'gq'.
+vim.opt.formatoptions = "cq"
+
+-- If ripgrep is available, use it as our default grep program.
+if vim.fn.executable("rg") then
+  vim.opt.grepprg = "rg --vimgrep --smart-case --hidden"
+  vim.opt.grepformat= "%f:%l:%c:%m"
+end
+
+-- Vim has a hard time guessing the background color in all terminals (e.g.
+-- tmux), so set it explicitly.
+vim.opt.background = "light"
+
+-- Download lazy.vim package manager.
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
   vim.fn.system({
@@ -23,55 +65,21 @@ require("lazy").setup({
   "junegunn/fzf.vim",
 })
 
--- vimscript configuration settings
-vim.cmd([[
-" No vi compatibility
-set nocompatible
+-- Fzf
+vim.keymap.set('n', '<leader>fg', function () vim.cmd("GitFiles") end)
+vim.keymap.set('n', '<leader>ff', function () vim.cmd("Files") end)
+vim.keymap.set('n', '<leader>fb', function () vim.cmd("Buffers") end)
 
-" Enables hidden buffers
-set hidden
-
-" No syntax highlighting
-syntax off
-
-" No filetype detection
-filetype off
-
-" Copy indent from the previous line
-set autoindent
-
-" Use spaces instead of tabs.
-set expandtab
-
-" 4 spaces per tab
-set tabstop=4
-set shiftwidth=4
-
-" No highlighting when searching
-set nohlsearch
-
-" 80 characters per line (also controls wrapping by 'gq').
-set textwidth=80
-" But don't auto-wrap text, only comments and 'gq'.
-set formatoptions=cq
-
-" Fzf
-set rtp+=~/.fzf
-nmap <leader>fg :GitFiles<CR>
-nmap <leader>ff :Files<CR>
-nmap <leader>fb :Buffers<CR>
-
-" If ripgrep is available, use it as our default grep program.
-if executable("rg")
-  set grepprg=rg\ --vimgrep\ --smart-case\ --hidden
-  set grepformat=%f:%l:%c:%m
-endif
-
-" Set netrw sorting order to strictly lexicographic. Do this after loading
-" vim-vinegar, which has its own setting.
-:au VimEnter * if exists('g:loaded_vinegar') | let g:netrw_sort_sequence="*" | endif
-]])
-
+-- Set netrw sorting order to strictly lexicographic. Do this after loading
+-- vim-vinegar, which has its own setting.
+vim.api.nvim_create_autocmd('VimEnter', {
+    callback = function(ev)
+        if vim.g.loaded_vinegar then
+            vim.g.netrw_sort_sequence = "*"
+        end
+    end,
+})
+    
 -- lspconfig setup. Adapted from
 -- https://github.com/neovim/nvim-lspconfig#Suggested-configuration.
 local lspconfig = require("lspconfig")
