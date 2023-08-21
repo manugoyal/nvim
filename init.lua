@@ -1,11 +1,4 @@
--- Load from ~/.vim
-vim.cmd([[
-set runtimepath^=~/.vim runtimepath+=~/.vim/after
-let &packpath = &runtimepath
-source ~/.vim/vimrc
-]])
-
--- lazy.vim
+-- Download lazy.vim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
   vim.fn.system({
@@ -19,7 +12,7 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
--- Load packages.
+-- Load packages
 require("lazy").setup({
   {"pmizio/typescript-tools.nvim",
    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
@@ -30,16 +23,67 @@ require("lazy").setup({
   "junegunn/fzf.vim",
 })
 
+-- vimscript configuration settings
+vim.cmd([[
+" No vi compatibility
+set nocompatible
+
+" Enables hidden buffers
+set hidden
+
+" No syntax highlighting
+syntax off
+
+" No filetype detection
+filetype off
+
+" Copy indent from the previous line
+set autoindent
+
+" Use spaces instead of tabs.
+set expandtab
+
+" 4 spaces per tab
+set tabstop=4
+set shiftwidth=4
+
+" No highlighting when searching
+set nohlsearch
+
+" 80 characters per line (also controls wrapping by 'gq').
+set textwidth=80
+" But don't auto-wrap text, only comments and 'gq'.
+set formatoptions=cq
+
+" Fzf
+set rtp+=~/.fzf
+nmap <leader>fg :GitFiles<CR>
+nmap <leader>ff :Files<CR>
+nmap <leader>fb :Buffers<CR>
+
+" If ripgrep is available, use it as our default grep program.
+if executable("rg")
+  set grepprg=rg\ --vimgrep\ --smart-case\ --hidden
+  set grepformat=%f:%l:%c:%m
+endif
+
+" Set netrw sorting order to strictly lexicographic. Do this after loading
+" vim-vinegar, which has its own setting.
+:au VimEnter * if exists('g:loaded_vinegar') | let g:netrw_sort_sequence="*" | endif
+]])
+
 -- lspconfig setup. Adapted from
 -- https://github.com/neovim/nvim-lspconfig#Suggested-configuration.
 local lspconfig = require("lspconfig")
 
 -- Global mappings.
 -- See `:help vim.diagnostic.*` for documentation on any of the below functions
-vim.keymap.set('n', '<space>e', vim.diagnostic.open_float)
-vim.keymap.set('n', '[d', vim.diagnostic.goto_prev)
-vim.keymap.set('n', ']d', vim.diagnostic.goto_next)
-vim.keymap.set('n', '<space>q', vim.diagnostic.setloclist)
+vim.keymap.set('n', '<leader>le', vim.diagnostic.open_float)
+vim.keymap.set('n', '<leader>lp', vim.diagnostic.goto_prev)
+vim.keymap.set('n', '<leader>ln', vim.diagnostic.goto_next)
+vim.keymap.set('n', '<leader>lq', function() 
+    vim.diagnostic.setqflist({ severity = { min = vim.diagnostic.severity.WARN } })
+end)
 
 -- Use LspAttach autocommand to only map the following keys
 -- after the language server attaches to the current buffer
@@ -52,21 +96,23 @@ vim.api.nvim_create_autocmd('LspAttach', {
     -- Buffer local mappings.
     -- See `:help vim.lsp.*` for documentation on any of the below functions
     local opts = { buffer = ev.buf }
-    vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
-    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
-    vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
-    vim.keymap.set('n', '<C-k>', vim.lsp.buf.signature_help, opts)
-    vim.keymap.set('n', '<space>wa', vim.lsp.buf.add_workspace_folder, opts)
-    vim.keymap.set('n', '<space>wr', vim.lsp.buf.remove_workspace_folder, opts)
-    vim.keymap.set('n', '<space>wl', function()
+    vim.keymap.set('n', '<leader>lD', vim.lsp.buf.declaration, opts)
+    vim.keymap.set('n', '<leader>ld', vim.lsp.buf.definition, opts)
+    vim.keymap.set('n', '<leader>lr', vim.lsp.buf.references, opts)
+    vim.keymap.set('n', '<leader>lt', vim.lsp.buf.type_definition, opts)
+    vim.keymap.set('n', '<leader>lk', vim.lsp.buf.hover, opts)
+    vim.keymap.set('n', '<leader>li', vim.lsp.buf.implementation, opts)
+    vim.keymap.set('n', '<leader>lK', vim.lsp.buf.signature_help, opts)
+
+    vim.keymap.set('n', '<leader>lwa', vim.lsp.buf.add_workspace_folder, opts)
+    vim.keymap.set('n', '<leader>lwr', vim.lsp.buf.remove_workspace_folder, opts)
+    vim.keymap.set('n', '<leader>lwl', function()
       print(vim.inspect(vim.lsp.buf.list_workspace_folders()))
     end, opts)
-    vim.keymap.set('n', '<space>D', vim.lsp.buf.type_definition, opts)
-    vim.keymap.set('n', '<space>rn', vim.lsp.buf.rename, opts)
-    vim.keymap.set({ 'n', 'v' }, '<space>ca', vim.lsp.buf.code_action, opts)
-    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
-    vim.keymap.set('n', '<space>f', function()
+
+    vim.keymap.set('n', '<leader>lrn', vim.lsp.buf.rename, opts)
+    vim.keymap.set({ 'n', 'v' }, '<leader>la', vim.lsp.buf.code_action, opts)
+    vim.keymap.set('n', '<leader>lf', function()
       vim.lsp.buf.format { async = true }
     end, opts)
   end,
