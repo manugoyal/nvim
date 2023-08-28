@@ -54,6 +54,11 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+-- Hide all semantic highlights
+for _, group in ipairs(vim.fn.getcompletion("@lsp", "highlight")) do
+  vim.api.nvim_set_hl(0, group, {})
+end
+
 -- Load packages
 require("lazy").setup({
   {"pmizio/typescript-tools.nvim",
