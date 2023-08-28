@@ -128,3 +128,6 @@ vim.api.nvim_create_autocmd('LspAttach', {
 
 -- typescript-tools setup
 require("typescript-tools").setup {}
+
+-- eslint
+lspconfig.eslint.setup {}
