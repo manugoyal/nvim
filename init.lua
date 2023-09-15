@@ -68,6 +68,7 @@ require("lazy").setup({
   "tpope/vim-vinegar",
   "junegunn/fzf",
   "junegunn/fzf.vim",
+  "manugoyal/githubify",
 })
 
 -- Fzf
