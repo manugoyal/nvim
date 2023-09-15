@@ -12,6 +12,9 @@ vim.cmd("syntax off")
 -- No filetype detection
 vim.cmd("filetype off")
 
+-- No filetype-specific indentation.
+vim.cmd("filetype indent off")
+
 -- Copy indent from the previous line
 vim.opt.autoindent = true
 
