@@ -64,6 +64,7 @@ end
 
 -- Load packages
 require("lazy").setup({
+  "neovim/nvim-lspconfig",
   {"pmizio/typescript-tools.nvim",
    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
    opts = {},
@@ -88,7 +89,7 @@ vim.api.nvim_create_autocmd('VimEnter', {
         end
     end,
 })
-    
+
 -- lspconfig setup. Adapted from
 -- https://github.com/neovim/nvim-lspconfig#Suggested-configuration.
 local lspconfig = require("lspconfig")
@@ -107,6 +108,9 @@ end)
 vim.api.nvim_create_autocmd('LspAttach', {
   group = vim.api.nvim_create_augroup('UserLspConfig', {}),
   callback = function(ev)
+    -- Use internal formatting for bindings like gq.
+    vim.bo[ev.buf].formatexpr = nil
+
     -- Enable completion triggered by <c-x><c-o>
     vim.bo[ev.buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
 
@@ -135,7 +139,9 @@ vim.api.nvim_create_autocmd('LspAttach', {
   end,
 })
 
--- typescript-tools setup
+-- Typescript-specific setup.
+
+-- typescript-tools
 require("typescript-tools").setup {}
 
 -- eslint
