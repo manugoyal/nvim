@@ -43,6 +43,12 @@ end
 -- tmux), so set it explicitly.
 vim.opt.background = "light"
 
+-- Set the hardcoded python program, so neovim doesn't get confused when
+-- launched within a virtualenv.
+if os.getenv("NEOVIM_PYTHON3_HOST_PROG") ~= nil then
+    vim.g.python3_host_prog = os.getenv("NEOVIM_PYTHON3_HOST_PROG")
+end
+
 -- Download lazy.vim package manager.
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
