@@ -83,7 +83,7 @@ require("lazy").setup({
 
 -- Fzf
 vim.keymap.set('n', '<leader>fg',
-               function () vim.cmd("GitFiles --recurse-submodules") end)
+               function () vim.cmd([[call fzf#vim#gitfiles("--recurse-submodules", fzf#vim#with_preview({"dir": systemlist("git rev-parse --show-toplevel")[0]}))]]) end)
 vim.keymap.set('n', '<leader>ff', function () vim.cmd("Files") end)
 vim.keymap.set('n', '<leader>fb', function () vim.cmd("Buffers") end)
 
