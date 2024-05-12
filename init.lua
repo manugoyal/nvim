@@ -75,7 +75,6 @@ require("lazy").setup({
    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
    opts = {},
   },
-  "tpope/vim-vinegar",
   "junegunn/fzf",
   "junegunn/fzf.vim",
   "manugoyal/githubify",
@@ -87,15 +86,11 @@ vim.keymap.set('n', '<leader>fg',
 vim.keymap.set('n', '<leader>ff', function () vim.cmd("Files") end)
 vim.keymap.set('n', '<leader>fb', function () vim.cmd("Buffers") end)
 
--- Set netrw sorting order to strictly lexicographic. Do this after loading
--- vim-vinegar, which has its own setting.
-vim.api.nvim_create_autocmd('VimEnter', {
-    callback = function(ev)
-        if vim.g.loaded_vinegar then
-            vim.g.netrw_sort_sequence = "*"
-        end
-    end,
-})
+-- In normal mode, map "-" to open netrw in the current directory.
+vim.keymap.set('n', '-', function () vim.cmd("Explore") end)
+
+-- Set netrw sorting order to strictly lexicographic.
+vim.g.netrw_sort_sequence = "*";
 
 -- lspconfig setup. Adapted from
 -- https://github.com/neovim/nvim-lspconfig#Suggested-configuration.
