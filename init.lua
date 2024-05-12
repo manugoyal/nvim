@@ -78,6 +78,7 @@ require("lazy").setup({
   "junegunn/fzf",
   "junegunn/fzf.vim",
   "manugoyal/githubify",
+  "github/copilot.vim",
 })
 
 -- Fzf
