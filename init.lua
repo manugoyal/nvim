@@ -78,9 +78,7 @@ require("lazy").setup({
   "junegunn/fzf",
   "junegunn/fzf.vim",
   "manugoyal/githubify",
-  {"github/copilot.vim",
-   cmd="Copilot disable",
-  },
+  "github/copilot.vim",
 })
 
 -- Fzf
