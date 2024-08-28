@@ -43,6 +43,9 @@ end
 -- tmux), so set it explicitly.
 vim.opt.background = "light"
 
+-- Set the color scheme to "quiet" which seems to be a reasonable compromise.
+vim.cmd("colorscheme quiet")
+
 -- Set the hardcoded python program, so neovim doesn't get confused when
 -- launched within a virtualenv.
 if os.getenv("NEOVIM_PYTHON3_HOST_PROG") ~= nil then
@@ -106,6 +109,9 @@ vim.api.nvim_create_autocmd('LspAttach', {
   callback = function(ev)
     -- Use internal formatting for bindings like gq.
     vim.bo[ev.buf].formatexpr = nil
+
+    -- Enable completion triggered by <c-x><c-o>
+    vim.bo[ev.buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
 
     -- Buffer local mappings.
     -- See `:help vim.lsp.*` for documentation on any of the below functions
