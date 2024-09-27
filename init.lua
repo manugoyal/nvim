@@ -82,6 +82,10 @@ require("lazy").setup({
   "junegunn/fzf.vim",
   "manugoyal/githubify",
   "github/copilot.vim",
+  {'mrcjkb/rustaceanvim',
+   version = '^5', -- Recommended
+   lazy = false, -- This plugin is already lazy
+  },
 })
 
 -- Fzf
