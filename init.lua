@@ -136,3 +136,6 @@ require("typescript-tools").setup {}
 
 -- eslint
 lspconfig.eslint.setup {}
+
+-- Python-specific setup.
+require'lspconfig'.pyright.setup{}
