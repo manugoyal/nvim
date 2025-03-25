@@ -83,7 +83,10 @@ require("lazy").setup({
   "junegunn/fzf",
   "junegunn/fzf.vim",
   "manugoyal/githubify",
-  "github/copilot.vim",
+  {
+    'Exafunction/codeium.vim',
+    event = 'BufEnter'
+  },
   {'mrcjkb/rustaceanvim',
    version = '^5', -- Recommended
    lazy = false, -- This plugin is already lazy
