@@ -75,14 +75,16 @@ end
 
 -- Load packages
 require("lazy").setup({
+  "junegunn/fzf",
+  "junegunn/fzf.vim",
+  "manugoyal/githubify",
+  -- Commenting out any fancy plugin config to keep life simple.
+  --[[
   "neovim/nvim-lspconfig",
   {"pmizio/typescript-tools.nvim",
    dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
    opts = {},
   },
-  "junegunn/fzf",
-  "junegunn/fzf.vim",
-  "manugoyal/githubify",
   {
     'Exafunction/codeium.vim',
     event = 'BufEnter'
@@ -91,6 +93,7 @@ require("lazy").setup({
    version = '^5', -- Recommended
    lazy = false, -- This plugin is already lazy
   },
+  --]]
 })
 
 -- Fzf
@@ -104,6 +107,9 @@ vim.keymap.set('n', '-', function () vim.cmd("Explore") end)
 
 -- Set netrw sorting order to strictly lexicographic.
 vim.g.netrw_sort_sequence = "*";
+
+-- Commenting out any fancy plugin config to keep life simple.
+--[[
 
 -- lspconfig setup. Adapted from
 -- https://github.com/neovim/nvim-lspconfig#Suggested-configuration.
@@ -142,3 +148,5 @@ lspconfig.eslint.setup {}
 
 -- Python-specific setup.
 require'lspconfig'.pyright.setup{}
+
+--]]
