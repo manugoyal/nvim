@@ -1,60 +1,31 @@
--- Package-agnostic configuration.
+-- Neovim Configuration
 
--- No vi compatibility
-vim.opt.compatible = false
+-- Basic Options
+vim.opt.compatible = false      -- No vi compatibility (default in Neovim)
+vim.opt.hidden = true           -- Allow hidden buffers
+vim.opt.autoindent = true       -- Copy indent from previous line
+vim.opt.expandtab = true        -- Use spaces instead of tabs
+vim.opt.tabstop = 4             -- 4 spaces per tab
+vim.opt.shiftwidth = 4          -- 4 spaces for indentation
+vim.opt.hlsearch = false        -- No search highlighting
+vim.opt.textwidth = 80          -- 80 characters per line
+vim.opt.formatoptions = "cq"    -- Only auto-wrap comments and use 'gq'
 
--- Enables hidden buffers
-vim.opt.hidden = true
-
--- No syntax highlighting
+-- Disable syntax and filetype features
 vim.cmd("syntax off")
-
--- No filetype detection
 vim.cmd("filetype off")
-
--- No filetype-specific indentation.
 vim.cmd("filetype indent off")
 
--- Copy indent from the previous line
-vim.opt.autoindent = true
+-- Note: fzf-lua automatically uses ripgrep for live_grep if available
 
--- Use spaces instead of tabs.
-vim.opt.expandtab = true
-
--- 4 spaces per tab
-vim.opt.tabstop = 4
-vim.opt.shiftwidth = 4
-
--- No highlighting when searching
-vim.opt.hlsearch = false
-
--- 80 characters per line (also controls wrapping by 'gq').
-vim.opt.textwidth = 80
--- But don't auto-wrap text, only comments and 'gq'.
-vim.opt.formatoptions = "cq"
-
--- If ripgrep is available, use it as our default grep program.
-if vim.fn.executable("rg") then
-  vim.opt.grepprg = "rg --vimgrep --smart-case --hidden"
-  vim.opt.grepformat= "%f:%l:%c:%m"
+-- Python host configuration
+-- Use dedicated virtual environment for Neovim
+local venv_python = vim.fn.stdpath("config") .. "/venv/bin/python"
+if vim.fn.executable(venv_python) == 1 then
+    vim.g.python3_host_prog = venv_python
 end
 
--- Vim has a hard time guessing the background color in all terminals (e.g.
--- tmux), so set it explicitly.
-vim.opt.background = "light"
-
--- Set the color scheme.
-vim.opt.termguicolors = true
-vim.cmd("colorscheme vim")
-vim.api.nvim_set_hl(0, 'DiffText', { bg = '#ff80ff' })
-
--- Set the hardcoded python program, so neovim doesn't get confused when
--- launched within a virtualenv.
-if os.getenv("NEOVIM_PYTHON3_HOST_PROG") ~= nil then
-    vim.g.python3_host_prog = os.getenv("NEOVIM_PYTHON3_HOST_PROG")
-end
-
--- Download lazy.vim package manager.
+-- Package Manager Setup (lazy.nvim)
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
   vim.fn.system({
@@ -62,91 +33,94 @@ if not vim.loop.fs_stat(lazypath) then
     "clone",
     "--filter=blob:none",
     "https://github.com/folke/lazy.nvim.git",
-    "--branch=stable", -- latest stable release
+    "--branch=stable",
     lazypath,
   })
 end
 vim.opt.rtp:prepend(lazypath)
 
--- Hide all semantic highlights
+-- Plugin Configuration
+local plugins = {
+  "ibhagwan/fzf-lua",
+  "manugoyal/githubify",
+}
+
+-- Load LSP and Codeium plugins
+table.insert(plugins, "neovim/nvim-lspconfig")
+table.insert(plugins, {
+  "Exafunction/codeium.vim",
+  event = "BufEnter",
+  config = function()
+    -- Disable default bindings
+    vim.g.codeium_disable_bindings = 1
+    -- Set up Tab for accepting suggestions
+    vim.keymap.set('i', '<Tab>', function()
+      return vim.fn['codeium#Accept']()
+    end, { expr = true, silent = true })
+  end
+})
+
+require("lazy").setup(plugins)
+
+-- Key Mappings
+
+-- fzf-lua mappings
+vim.keymap.set('n', '<leader>ff', "<cmd>FzfLua files<cr>", { desc = "Find files" })
+vim.keymap.set('n', '<leader>fg', "<cmd>FzfLua git_files<cr>", { desc = "Find git files" })
+vim.keymap.set('n', '<leader>fb', "<cmd>FzfLua buffers<cr>", { desc = "Find buffers" })
+vim.keymap.set('n', '<leader>fl', "<cmd>FzfLua live_grep<cr>", { desc = "Live grep" })
+vim.keymap.set('n', '<leader>fw', "<cmd>FzfLua grep_cword<cr>", { desc = "Grep word under cursor" })
+
+-- File explorer
+vim.keymap.set('n', '-', "<cmd>Explore<cr>", { desc = "Open netrw" })
+
+-- Netrw Configuration
+vim.g.netrw_sort_sequence = "*"  -- Lexicographic sorting
+
+-- Disable LSP semantic highlights
 for _, group in ipairs(vim.fn.getcompletion("@lsp", "highlight")) do
   vim.api.nvim_set_hl(0, group, {})
 end
 
--- Load packages
-require("lazy").setup({
-  "junegunn/fzf",
-  "junegunn/fzf.vim",
-  "manugoyal/githubify",
-  -- Commenting out any fancy plugin config to keep life simple.
-  --[[
-  "neovim/nvim-lspconfig",
-  {"pmizio/typescript-tools.nvim",
-   dependencies = { "nvim-lua/plenary.nvim", "neovim/nvim-lspconfig" },
-   opts = {},
-  },
-  {
-    'Exafunction/codeium.vim',
-    event = 'BufEnter'
-  },
-  {'mrcjkb/rustaceanvim',
-   version = '^5', -- Recommended
-   lazy = false, -- This plugin is already lazy
-  },
-  --]]
-})
-
--- Fzf
-vim.keymap.set('n', '<leader>fg',
-               function () vim.cmd([[call fzf#vim#gitfiles("--recurse-submodules", fzf#vim#with_preview({"dir": systemlist("git rev-parse --show-toplevel")[0]}))]]) end)
-vim.keymap.set('n', '<leader>ff', function () vim.cmd("Files") end)
-vim.keymap.set('n', '<leader>fb', function () vim.cmd("Buffers") end)
-
--- In normal mode, map "-" to open netrw in the current directory.
-vim.keymap.set('n', '-', function () vim.cmd("Explore") end)
-
--- Set netrw sorting order to strictly lexicographic.
-vim.g.netrw_sort_sequence = "*";
-
--- Commenting out any fancy plugin config to keep life simple.
---[[
-
--- lspconfig setup. Adapted from
--- https://github.com/neovim/nvim-lspconfig#Suggested-configuration.
+-- LSP Configuration
 local lspconfig = require("lspconfig")
 
--- Global mappings.
-
--- Use LspAttach autocommand to only map the following keys
--- after the language server attaches to the current buffer
+-- LSP attach configuration
 vim.api.nvim_create_autocmd('LspAttach', {
   group = vim.api.nvim_create_augroup('UserLspConfig', {}),
   callback = function(ev)
-    -- Use internal formatting for bindings like gq.
-    vim.bo[ev.buf].formatexpr = nil
-
     -- Enable completion triggered by <c-x><c-o>
     vim.bo[ev.buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
-
-    -- Buffer local mappings.
-    -- See `:help vim.lsp.*` for documentation on any of the below functions
+    
+    -- Disable LSP formatting for gq
+    vim.bo[ev.buf].formatexpr = nil
+    
+    -- Buffer local mappings
     local opts = { buffer = ev.buf }
-    vim.keymap.set('n', '<leader>lr', vim.lsp.buf.references, opts)
-    vim.keymap.set('n', '<leader>lt', vim.lsp.buf.type_definition, opts)
-    vim.keymap.set('n', '<leader>ln', vim.lsp.buf.rename, opts)
-    vim.keymap.set({ 'n', 'v' }, '<leader>la', vim.lsp.buf.code_action, opts)
+    vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
+    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
+    vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
+    vim.keymap.set('n', 'gT', vim.lsp.buf.type_definition, opts)
+    vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, opts)
+    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
   end,
 })
 
--- Typescript-specific setup.
+-- Language server configurations
 
--- typescript-tools
-require("typescript-tools").setup {}
+-- Python
+lspconfig.pyright.setup{}
 
--- eslint
-lspconfig.eslint.setup {}
+-- Rust
+lspconfig.rust_analyzer.setup{
+  settings = {
+    ["rust-analyzer"] = {
+      checkOnSave = {
+        command = "clippy"
+      }
+    }
+  }
+}
 
--- Python-specific setup.
-require'lspconfig'.pyright.setup{}
-
---]]
+-- TypeScript/JavaScript
+lspconfig.tsserver.setup{}
