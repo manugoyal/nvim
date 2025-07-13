@@ -40,27 +40,62 @@ end
 vim.opt.rtp:prepend(lazypath)
 
 -- Plugin Configuration
-local plugins = {
-  "ibhagwan/fzf-lua",
+require("lazy").setup({
+  {
+    "ibhagwan/fzf-lua",
+    config = function()
+      require("fzf-lua").setup({
+        defaults = {
+          keymap = {
+            fzf = {
+              -- Ctrl+Q to select all items and accept (works in all pickers)
+              ["ctrl-q"] = "select-all+accept"
+            }
+          }
+        },
+        grep = {
+          actions = {
+            -- Ctrl+Q in live_grep sends all results to quickfix window
+            ["ctrl-q"] = { 
+              fn = require"fzf-lua".actions.file_sel_to_qf, 
+              prefix = "select-all" 
+            }
+          }
+        }
+      })
+    end
+  },
   "manugoyal/githubify",
-}
-
--- Load LSP and Codeium plugins
-table.insert(plugins, "neovim/nvim-lspconfig")
-table.insert(plugins, {
-  "Exafunction/codeium.vim",
-  event = "BufEnter",
-  config = function()
-    -- Disable default bindings
-    vim.g.codeium_disable_bindings = 1
-    -- Set up Tab for accepting suggestions
-    vim.keymap.set('i', '<Tab>', function()
-      return vim.fn['codeium#Accept']()
-    end, { expr = true, silent = true })
-  end
+  "neovim/nvim-lspconfig",
+  "nvim-lua/plenary.nvim",
+  {
+    "pmizio/typescript-tools.nvim",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "neovim/nvim-lspconfig"
+    },
+    opts = {
+        on_attach = function(client, bufnr)
+          vim.keymap.set('n', 'gS', '<cmd>TSToolsGotoSourceDefinition<CR>', {
+              buffer = bufnr,
+              desc = "Go to Source Definition",
+          })
+        end,
+    }
+  },
+  {
+    "Exafunction/codeium.vim",
+    event = "BufEnter",
+    config = function()
+      -- Disable default bindings
+      vim.g.codeium_disable_bindings = 1
+      -- Set up Tab for accepting suggestions
+      vim.keymap.set('i', '<Tab>', function()
+        return vim.fn['codeium#Accept']()
+      end, { expr = true, silent = true })
+    end
+  },
 })
-
-require("lazy").setup(plugins)
 
 -- Key Mappings
 
@@ -97,10 +132,10 @@ vim.api.nvim_create_autocmd('LspAttach', {
     
     -- Buffer local mappings
     local opts = { buffer = ev.buf }
-    vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
     vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
+    vim.keymap.set('n', 'gt', vim.lsp.buf.type_definition, opts)
     vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
-    vim.keymap.set('n', 'gT', vim.lsp.buf.type_definition, opts)
+    vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
     vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, opts)
     vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
   end,
@@ -122,5 +157,5 @@ lspconfig.rust_analyzer.setup{
   }
 }
 
--- TypeScript/JavaScript
-lspconfig.tsserver.setup{}
+-- TypeScript/JavaScript (using typescript-tools.nvim)
+-- Configuration handled by lazy.nvim opts
