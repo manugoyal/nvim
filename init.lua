@@ -53,7 +53,19 @@ require("lazy").setup({
             }
           }
         },
+        files = {
+          -- Use fd to find files, including in submodules
+          cmd = "fd --type f --hidden --follow --exclude .git",
+        },
+        git = {
+          files = {
+            -- Include submodules in git files search
+            cmd = "git ls-files --recurse-submodules",
+          },
+        },
         grep = {
+          -- Use rg with submodule support
+          rg_opts = "--column --line-number --no-heading --color=always --smart-case --max-columns=4096 --hidden --follow",
           actions = {
             -- Ctrl+Q in live_grep sends all results to quickfix window
             ["ctrl-q"] = { 
@@ -119,6 +131,21 @@ end
 
 -- LSP Configuration
 local lspconfig = require("lspconfig")
+
+-- Configure diagnostics to show only warnings and errors
+vim.diagnostic.config({
+  virtual_text = {
+    severity = { min = vim.diagnostic.severity.WARN }
+  },
+  signs = {
+    severity = { min = vim.diagnostic.severity.WARN }
+  },
+  underline = {
+    severity = { min = vim.diagnostic.severity.WARN }
+  },
+  update_in_insert = false,
+  severity_sort = true,
+})
 
 -- LSP attach configuration
 vim.api.nvim_create_autocmd('LspAttach', {
