@@ -121,6 +121,24 @@ vim.keymap.set('n', '<leader>fw', "<cmd>FzfLua grep_cword<cr>", { desc = "Grep w
 -- File explorer
 vim.keymap.set('n', '-', "<cmd>Explore<cr>", { desc = "Open netrw" })
 
+-- Copy filepath to register (use with "x<leader>cp to copy to register x)
+vim.keymap.set('n', '<leader>cp', function()
+  local filepath = vim.fn.expand('%')
+  local reg = vim.v.register
+  vim.fn.setreg(reg, filepath)
+  print('Copied to register ' .. reg .. ': ' .. filepath)
+end, { desc = "Copy filepath to register" })
+
+-- Copy filepath:line to register (use with "x<leader>cl to copy to register x)
+vim.keymap.set('n', '<leader>cl', function()
+  local filepath = vim.fn.expand('%')
+  local line = vim.fn.line('.')
+  local location = filepath .. ':' .. line
+  local reg = vim.v.register
+  vim.fn.setreg(reg, location)
+  print('Copied to register ' .. reg .. ': ' .. location)
+end, { desc = "Copy filepath:line to register" })
+
 -- Netrw Configuration
 vim.g.netrw_sort_sequence = "*"  -- Lexicographic sorting
 
