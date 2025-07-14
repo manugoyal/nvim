@@ -88,7 +88,7 @@ require("lazy").setup({
     },
     opts = {
         on_attach = function(client, bufnr)
-          vim.keymap.set('n', 'gS', '<cmd>TSToolsGotoSourceDefinition<CR>', {
+          vim.keymap.set('n', 'gs', '<cmd>TSToolsGoToSourceDefinition<CR>', {
               buffer = bufnr,
               desc = "Go to Source Definition",
           })
