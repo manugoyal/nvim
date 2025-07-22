@@ -11,7 +11,7 @@ vim.opt.hlsearch = false        -- No search highlighting
 vim.opt.textwidth = 80          -- 80 characters per line
 vim.opt.formatoptions = "cq"    -- Only auto-wrap comments and use 'gq'
 if vim.fn.executable("rg") == 1 then
-  vim.opt.grepprg = "rg --vimgrep" -- Use ripgrep for :grep without -uu
+  vim.opt.grepprg = "rg --vimgrep --smart-case"
 end
 
 -- Disable syntax and filetype features
