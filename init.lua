@@ -150,21 +150,6 @@ end
 -- LSP Configuration
 local lspconfig = require("lspconfig")
 
--- Configure diagnostics to show only warnings and errors
-vim.diagnostic.config({
-  virtual_text = {
-    severity = { min = vim.diagnostic.severity.WARN }
-  },
-  signs = {
-    severity = { min = vim.diagnostic.severity.WARN }
-  },
-  underline = {
-    severity = { min = vim.diagnostic.severity.WARN }
-  },
-  update_in_insert = false,
-  severity_sort = true,
-})
-
 -- LSP attach configuration
 vim.api.nvim_create_autocmd('LspAttach', {
   group = vim.api.nvim_create_augroup('UserLspConfig', {}),
