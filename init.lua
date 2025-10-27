@@ -151,7 +151,6 @@ for _, group in ipairs(vim.fn.getcompletion("@lsp", "highlight")) do
 end
 
 -- LSP Configuration
-local lspconfig = require("lspconfig")
 
 -- LSP attach configuration
 vim.api.nvim_create_autocmd('LspAttach', {
@@ -177,10 +176,12 @@ vim.api.nvim_create_autocmd('LspAttach', {
 -- Language server configurations
 
 -- Python
-lspconfig.pyright.setup{}
+vim.lsp.enable('pyright')
+vim.lsp.config.pyright = {}
 
 -- Rust
-lspconfig.rust_analyzer.setup{
+vim.lsp.enable('rust_analyzer')
+vim.lsp.config.rust_analyzer = {
   settings = {
     ["rust-analyzer"] = {
       checkOnSave = {
