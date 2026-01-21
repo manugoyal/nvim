@@ -107,9 +107,49 @@ local function parse_comments(data)
   return comments
 end
 
--- Load comments for a PR
+-- Load comments for a PR (async, non-blocking)
+-- Use this for background refreshes
+---@param pr_number number PR number
+---@param opts table|nil {focus: boolean} options
+function M.load_comments_async(pr_number, opts)
+  opts = opts or {}
+  local focus = opts.focus or false
+
+  if not pr_number or not M.state.owner or not M.state.repo then
+    return
+  end
+
+  api.get_pr_comments_async(M.state.owner, M.state.repo, pr_number, function(result, err)
+    if err then
+      vim.notify("Failed to load comments: " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    M.state.comments = parse_comments(result)
+
+    -- Check for existing pending review
+    local pr = result.data.repository.pullRequest
+    -- Get current user async would be better, but for now just update pending review from data
+    for _, review in ipairs(safe_get(pr, "reviews", "nodes") or {}) do
+      if review.state == "PENDING" then
+        M.state.pending_review = { id = review.id, databaseId = review.databaseId }
+        break
+      end
+    end
+
+    -- Populate quickfix
+    M.populate_quickfix({ focus = focus })
+  end)
+end
+
+-- Load comments for a PR (sync, blocks until complete)
+-- Use this for user-initiated loads
 ---@param pr_number number|nil PR number (will prompt if nil)
-function M.load_comments(pr_number)
+---@param opts table|nil {focus: boolean} options
+function M.load_comments(pr_number, opts)
+  opts = opts or {}
+  local focus = opts.focus ~= false  -- default to true
+
   -- Get repo info
   local owner, repo = api.get_repo()
   if not owner or not repo then
@@ -129,7 +169,7 @@ function M.load_comments(pr_number)
   if not pr_number then
     vim.ui.input({ prompt = "PR number: " }, function(input)
       if input then
-        M.load_comments(tonumber(input))
+        M.load_comments(tonumber(input), opts)
       end
     end)
     return
@@ -162,13 +202,17 @@ function M.load_comments(pr_number)
   end
 
   -- Populate quickfix
-  M.populate_quickfix()
+  M.populate_quickfix({ focus = focus })
 
   vim.notify(string.format("Loaded %d comments for PR #%d", #M.state.comments, pr_number), vim.log.levels.INFO)
 end
 
 -- Populate quickfix with comments, grouped by thread
-function M.populate_quickfix()
+---@param opts table|nil {focus: boolean} whether to focus quickfix (default true)
+function M.populate_quickfix(opts)
+  opts = opts or {}
+  local focus = opts.focus ~= false  -- default to true
+
   local items = {}
 
   -- Group comments by thread_id
@@ -259,7 +303,9 @@ function M.populate_quickfix()
     items = items,
   })
 
-  vim.cmd("copen")
+  if focus then
+    vim.cmd("copen")
+  end
 end
 
 -- Get the comment under cursor in quickfix
@@ -295,11 +341,7 @@ function M.add_comment(opts)
     line = line or vim.fn.line(".")
   end
 
-  -- Create a scratch buffer for editing the comment
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_option(buf, "buftype", "acwrite")
-  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-
+  -- Determine buffer title
   local title = "New Comment"
   if opts.reply_to_thread then
     title = "Reply to Thread"
@@ -307,6 +349,16 @@ function M.add_comment(opts)
     title = string.format("New Comment on %s:%d", path, line or 0)
   end
 
+  -- Check if a buffer with this name already exists and delete it
+  local existing_buf = vim.fn.bufnr(title)
+  if existing_buf ~= -1 then
+    vim.api.nvim_buf_delete(existing_buf, { force = true })
+  end
+
+  -- Create a scratch buffer for editing the comment
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, "buftype", "acwrite")
+  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
   vim.api.nvim_buf_set_name(buf, title)
 
   -- Open in a split
@@ -315,6 +367,17 @@ function M.add_comment(opts)
 
   -- Track if comment has been submitted
   local submitted = false
+
+  -- Helper to handle successful submission
+  local function on_submit_success()
+    M.load_comments_async(M.state.pr_number)
+  end
+
+  -- Helper to handle failed submission
+  local function on_submit_error(msg)
+    submitted = false  -- Allow retry
+    vim.notify(msg, vim.log.levels.ERROR)
+  end
 
   -- Set up save handler
   vim.api.nvim_create_autocmd("BufWriteCmd", {
@@ -334,67 +397,63 @@ function M.add_comment(opts)
         return
       end
 
+      -- Mark as submitted immediately so user can close buffer
+      submitted = true
+      vim.bo[buf].modified = false
+
       if opts.reply_to_thread then
-        -- Reply to existing thread
-        local result, err = api.reply_to_thread(opts.reply_to_thread, body)
-        if err then
-          vim.notify("Failed to add reply: " .. err, vim.log.levels.ERROR)
-          return
-        end
-        vim.notify("Reply added! :q to close", vim.log.levels.INFO)
+        -- Reply to existing thread (async)
+        api.reply_to_thread_async(opts.reply_to_thread, body, function(result, err)
+          if err then
+            on_submit_error("Failed to add reply: " .. err)
+            return
+          end
+          on_submit_success()
+        end)
       elseif path then
         -- Add review comment (to pending review)
         local pending = opts.pending ~= false -- default to pending
 
         if pending then
-          -- Ensure we have a pending review
+          -- Ensure we have a pending review (this part stays sync for simplicity)
           if not M.state.pending_review then
             local review, err = api.get_or_create_pending_review(
               M.state.owner, M.state.repo, M.state.pr_number
             )
             if err then
-              vim.notify("Failed to create pending review: " .. err, vim.log.levels.ERROR)
+              on_submit_error("Failed to create pending review: " .. err)
               return
             end
             M.state.pending_review = review
           end
 
-          local result, err = api.add_review_thread(
-            M.state.pending_review.id, path, line, body, "RIGHT"
+          api.add_review_thread_async(
+            M.state.pending_review.id, path, line, body, "RIGHT",
+            function(result, err)
+              if err then
+                on_submit_error("Failed to add comment: " .. err)
+                return
+              end
+              on_submit_success()
+            end
           )
-          if err then
-            vim.notify("Failed to add comment: " .. err, vim.log.levels.ERROR)
-            return
-          end
-          vim.notify("Pending comment added! :q to close", vim.log.levels.INFO)
         else
           vim.notify("Direct (non-pending) review comments not yet implemented", vim.log.levels.WARN)
+          submitted = false
           return
         end
       else
-        -- Add issue comment (general PR comment)
-        local result, err = api.add_issue_comment(
-          M.state.owner, M.state.repo, M.state.pr_number, body
+        -- Add issue comment (general PR comment, async)
+        api.add_issue_comment_async(
+          M.state.owner, M.state.repo, M.state.pr_number, body,
+          function(result, err)
+            if err then
+              on_submit_error("Failed to add comment: " .. err)
+              return
+            end
+            on_submit_success()
+          end
         )
-        if err then
-          vim.notify("Failed to add comment: " .. err, vim.log.levels.ERROR)
-          return
-        end
-        vim.notify("Comment added! :q to close", vim.log.levels.INFO)
-      end
-
-      -- Mark as submitted and not modified
-      submitted = true
-      vim.bo[buf].modified = false
-    end,
-  })
-
-  -- Refresh comments when buffer is closed
-  vim.api.nvim_create_autocmd("BufDelete", {
-    buffer = buf,
-    callback = function()
-      if submitted then
-        M.load_comments(M.state.pr_number)
       end
     end,
   })
@@ -412,11 +471,18 @@ function M.edit_comment(comment)
     return
   end
 
+  -- Check if a buffer for this comment already exists and delete it
+  local buf_name = "Edit Comment: " .. comment.id
+  local existing_buf = vim.fn.bufnr(buf_name)
+  if existing_buf ~= -1 then
+    vim.api.nvim_buf_delete(existing_buf, { force = true })
+  end
+
   -- Create a scratch buffer for editing
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_option(buf, "buftype", "acwrite")
   vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-  vim.api.nvim_buf_set_name(buf, "Edit Comment: " .. comment.id)
+  vim.api.nvim_buf_set_name(buf, buf_name)
 
   -- Set initial content
   local lines = vim.split(comment.body, "\n")
@@ -426,8 +492,9 @@ function M.edit_comment(comment)
   vim.cmd("split")
   vim.api.nvim_win_set_buf(0, buf)
 
-  -- Track last saved content
+  -- Track last saved content and submission state
   local last_saved = comment.body
+  local submitting = false
 
   -- Set up save handler
   vim.api.nvim_create_autocmd("BufWriteCmd", {
@@ -442,25 +509,27 @@ function M.edit_comment(comment)
         return
       end
 
-      local result, err = api.update_comment(comment.id, body)
-      if err then
-        vim.notify("Failed to update comment: " .. err, vim.log.levels.ERROR)
+      -- Skip if already submitting
+      if submitting then
         return
       end
 
-      last_saved = body
+      -- Mark as submitting and allow user to close buffer
+      submitting = true
+      local pending_body = body
       vim.bo[buf].modified = false
-      vim.notify("Comment updated! :q to close", vim.log.levels.INFO)
-    end,
-  })
 
-  -- Refresh comments when buffer is closed
-  vim.api.nvim_create_autocmd("BufDelete", {
-    buffer = buf,
-    callback = function()
-      if last_saved ~= comment.body then
-        M.load_comments(M.state.pr_number)
-      end
+      api.update_comment_async(comment.id, body, function(result, err)
+        if err then
+          submitting = false
+          vim.notify("Failed to update comment: " .. err, vim.log.levels.ERROR)
+          return
+        end
+
+        last_saved = pending_body
+        submitting = false
+        M.load_comments_async(M.state.pr_number)
+      end)
     end,
   })
 
@@ -486,8 +555,7 @@ function M.delete_comment(comment)
         vim.notify("Failed to delete comment: " .. (err or "unknown error"), vim.log.levels.ERROR)
         return
       end
-      vim.notify("Comment deleted!", vim.log.levels.INFO)
-      M.load_comments(M.state.pr_number)
+      M.load_comments_async(M.state.pr_number)
     end
   end)
 end
@@ -536,9 +604,8 @@ function M.submit_review(event)
       return
     end
 
-    vim.notify("Review submitted!", vim.log.levels.INFO)
     M.state.pending_review = nil
-    M.load_comments(M.state.pr_number)
+    M.load_comments_async(M.state.pr_number)
   end)
 end
 
@@ -579,6 +646,9 @@ function M.preview_comment()
     vim.notify("No comment selected", vim.log.levels.WARN)
     return
   end
+
+  -- Save current window to return to it later
+  local prev_win = vim.api.nvim_get_current_win()
 
   -- Build content
   local lines = {}
@@ -677,13 +747,16 @@ function M.preview_comment()
     title_pos = "center",
   })
 
-  -- Close on q or Esc
-  vim.keymap.set("n", "q", function()
+  -- Close on q or Esc and return to previous window
+  local function close_preview()
     vim.api.nvim_win_close(win, true)
-  end, { buffer = buf })
-  vim.keymap.set("n", "<Esc>", function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf })
+    if vim.api.nvim_win_is_valid(prev_win) then
+      vim.api.nvim_set_current_win(prev_win)
+    end
+  end
+
+  vim.keymap.set("n", "q", close_preview, { buffer = buf })
+  vim.keymap.set("n", "<Esc>", close_preview, { buffer = buf })
 end
 
 -- View file at original commit (for outdated comments)

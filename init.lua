@@ -163,6 +163,7 @@ end, { desc = "Open Diffview for current PR changes" })
 
 -- GitHub PR mappings
 vim.keymap.set('n', '<leader>ghc', "<cmd>GHPRComments<cr>", { desc = "Load GitHub PR comments" })
+vim.keymap.set('n', '<leader>gha', "<cmd>GHPRCommentAdd<cr>", { desc = "Add PR comment at cursor" })
 
 -- fzf-lua mappings
 vim.keymap.set('n', '<leader>ff', "<cmd>FzfLua files<cr>", { desc = "Find files" })
