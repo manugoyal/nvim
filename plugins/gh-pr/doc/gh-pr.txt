@@ -1,0 +1,121 @@
+*gh-pr.txt*  GitHub PR Comment Management for Neovim
+
+Author:  Manu Goyal
+License: MIT
+
+==============================================================================
+CONTENTS                                                    *gh-pr-contents*
+
+    1. Introduction .......................... |gh-pr-introduction|
+    2. Requirements .......................... |gh-pr-requirements|
+    3. Commands .............................. |gh-pr-commands|
+    4. Quickfix Keymaps ...................... |gh-pr-keymaps|
+    5. Comment States ........................ |gh-pr-states|
+    6. Workflow .............................. |gh-pr-workflow|
+
+==============================================================================
+1. INTRODUCTION                                          *gh-pr-introduction*
+
+gh-pr.nvim is a Neovim plugin for managing GitHub PR comments, including
+support for pending review comments. It displays comments in a quickfix
+window with threading visualization and allows you to add, edit, delete,
+and reply to comments directly from Neovim.
+
+==============================================================================
+2. REQUIREMENTS                                          *gh-pr-requirements*
+
+- Neovim 0.8+
+- GitHub CLI (`gh`) installed and authenticated
+
+==============================================================================
+3. COMMANDS                                                  *gh-pr-commands*
+
+                                                             *:GHPRComments*
+:GHPRComments [pr_number]
+    Load PR comments into quickfix. If no PR number is given, uses the
+    current branch's associated PR.
+
+                                                           *:GHPRCommentAdd*
+:GHPRCommentAdd
+    Add a comment on the current line. Creates a pending review comment.
+
+                                                    *:GHPRCommentAddGeneral*
+:GHPRCommentAddGeneral
+    Add a general PR comment (not attached to a specific line).
+
+                                                          *:GHPRCommentEdit*
+:GHPRCommentEdit
+    Edit the selected comment in the quickfix window.
+
+                                                        *:GHPRCommentDelete*
+:GHPRCommentDelete
+    Delete the selected comment in the quickfix window.
+
+                                                         *:GHPRCommentReply*
+:GHPRCommentReply
+    Reply to the selected thread in the quickfix window.
+
+                                                          *:GHPRReviewSubmit*
+:GHPRReviewSubmit [event]
+    Submit your pending review. Event can be APPROVE, COMMENT, or
+    REQUEST_CHANGES. If not specified, you will be prompted to choose.
+
+                                                                 *:GHPRGoto*
+:GHPRGoto
+    Jump to the file and line of the selected comment.
+
+==============================================================================
+4. QUICKFIX KEYMAPS                                          *gh-pr-keymaps*
+
+When viewing PR comments in the quickfix window, the following keymaps
+are available:
+
+    e           Edit comment under cursor
+    d           Delete comment under cursor
+    r           Reply to thread under cursor
+    p           Preview full comment in floating window
+    o           View file at original commit (useful for outdated comments)
+    R           Refresh comments from GitHub
+    S           Submit pending review
+    <CR>        Jump to comment location in file
+
+==============================================================================
+5. COMMENT STATES                                              *gh-pr-states*
+
+Comments can have the following states, shown as tags in the quickfix:
+
+[PENDING]       Comments in your pending (draft) review. These are only
+                visible to you until you submit the review.
+
+[OUTDATED]      Comments on code that has since changed. The commented
+                line may no longer exist or may have moved. Use 'o' to
+                view the file at the original commit.
+
+(no tag)        Published comments visible to everyone.
+
+==============================================================================
+6. WORKFLOW                                                  *gh-pr-workflow*
+
+A typical workflow for reviewing a PR:
+
+1. Open a file in your PR branch
+2. Run `:GHPRComments` or press `<leader>ghc` to load comments
+3. Navigate the quickfix with `j`/`k` or `]q`/`[q`
+4. Press `p` to preview a comment, `<CR>` to jump to its location
+5. Press `o` on outdated comments to see the original code context
+6. Position cursor on a line and run `:GHPRCommentAdd` to add a
+   pending comment, or run `:GHPRCommentAddGeneral` for a general comment
+7. Write your comment in the buffer that opens, then `:wq` to submit
+8. When done reviewing, press `S` or run `:GHPRReviewSubmit` and select
+   APPROVE, COMMENT, or REQUEST_CHANGES
+
+Threading display in quickfix:
+>
+    ┬  Start of a thread with replies
+    ├  Middle reply in a thread
+    └  Last reply in a thread
+    ─  Single comment with no replies
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

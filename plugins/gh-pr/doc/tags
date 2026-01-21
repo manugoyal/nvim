@@ -1,0 +1,17 @@
+:GHPRCommentAdd	gh-pr.txt	/*:GHPRCommentAdd*
+:GHPRCommentAddHere	gh-pr.txt	/*:GHPRCommentAddHere*
+:GHPRCommentDelete	gh-pr.txt	/*:GHPRCommentDelete*
+:GHPRCommentEdit	gh-pr.txt	/*:GHPRCommentEdit*
+:GHPRCommentReply	gh-pr.txt	/*:GHPRCommentReply*
+:GHPRComments	gh-pr.txt	/*:GHPRComments*
+:GHPRGoto	gh-pr.txt	/*:GHPRGoto*
+:GHPRHelp	gh-pr.txt	/*:GHPRHelp*
+:GHPRReviewSubmit	gh-pr.txt	/*:GHPRReviewSubmit*
+gh-pr-commands	gh-pr.txt	/*gh-pr-commands*
+gh-pr-contents	gh-pr.txt	/*gh-pr-contents*
+gh-pr-introduction	gh-pr.txt	/*gh-pr-introduction*
+gh-pr-keymaps	gh-pr.txt	/*gh-pr-keymaps*
+gh-pr-requirements	gh-pr.txt	/*gh-pr-requirements*
+gh-pr-states	gh-pr.txt	/*gh-pr-states*
+gh-pr-workflow	gh-pr.txt	/*gh-pr-workflow*
+gh-pr.txt	gh-pr.txt	/*gh-pr.txt*

@@ -110,9 +110,59 @@ require("lazy").setup({
       end, { expr = true, silent = true })
     end
   },
+  {
+    "sindrets/diffview.nvim",
+    cmd = { "DiffviewOpen", "DiffviewClose" },
+    opts = {
+      -- This is the "magic" setting that enables LSP on the RHS
+      default_args = {
+        DiffviewOpen = { "--imply-local" },
+      },
+      enhanced_diff_hl = true, -- Better syntax highlighting
+      use_icons = true,
+      icons = {
+        folder_closed = "",
+        folder_open = "",
+      },
+      view = {
+        -- Use horizontal layout for side-by-side diff (left/right panes)
+        default = { layout = "diff2_horizontal" },
+      },
+    },
+  },
+  {
+    dir = vim.fn.stdpath("config") .. "/plugins/gh-pr",
+    config = function()
+      require("gh-pr").setup()
+    end,
+  },
 })
 
+-- Commands
+
+-- Open Diffview for the current PR (from merge-base to HEAD)
+vim.api.nvim_create_user_command("DiffviewPR", function()
+  local base_branch = vim.fn.system("gh pr view --json baseRefName -q .baseRefName")
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Failed to get PR base branch: " .. base_branch, vim.log.levels.ERROR)
+    return
+  end
+  base_branch = vim.trim(base_branch)
+
+  local merge_base = vim.fn.system("git merge-base origin/" .. base_branch .. " HEAD")
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Failed to get merge-base: " .. merge_base, vim.log.levels.ERROR)
+    return
+  end
+  merge_base = vim.trim(merge_base)
+
+  vim.cmd("DiffviewOpen " .. merge_base)
+end, { desc = "Open Diffview for current PR changes" })
+
 -- Key Mappings
+
+-- GitHub PR mappings
+vim.keymap.set('n', '<leader>ghc', "<cmd>GHPRComments<cr>", { desc = "Load GitHub PR comments" })
 
 -- fzf-lua mappings
 vim.keymap.set('n', '<leader>ff', "<cmd>FzfLua files<cr>", { desc = "Find files" })
