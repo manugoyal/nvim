@@ -182,7 +182,7 @@ function M.load_comments(pr_number, opts)
   -- Fetch comments
   vim.notify(string.format("Loading comments for PR #%d...", pr_number), vim.log.levels.INFO)
 
-  local result, err = api.get_pr_comments(owner, repo, pr_number)
+  local result, err = api.await(api.get_pr_comments_async, owner, repo, pr_number)
   if err then
     vim.notify("Failed to load comments: " .. err, vim.log.levels.ERROR)
     return
@@ -415,28 +415,52 @@ function M.add_comment(opts)
         local pending = opts.pending ~= false -- default to pending
 
         if pending then
-          -- Ensure we have a pending review (this part stays sync for simplicity)
-          if not M.state.pending_review then
-            local review, err = api.get_or_create_pending_review(
-              M.state.owner, M.state.repo, M.state.pr_number
+          -- Helper to add the review thread
+          local function do_add_thread(retry_on_stale)
+            api.add_review_thread_async(
+              M.state.pending_review.id, path, line, body, "RIGHT",
+              function(result, err)
+                if err then
+                  -- If the review ID is stale, clear cache and retry once
+                  if retry_on_stale and err:match("Could not resolve to a node") then
+                    M.state.pending_review = nil
+                    api.get_or_create_pending_review_async(
+                      M.state.owner, M.state.repo, M.state.pr_number,
+                      function(review, create_err)
+                        if create_err then
+                          on_submit_error("Failed to create pending review: " .. create_err)
+                          return
+                        end
+                        M.state.pending_review = review
+                        do_add_thread(false)  -- retry without further retries
+                      end
+                    )
+                    return
+                  end
+                  on_submit_error("Failed to add comment: " .. err)
+                  return
+                end
+                on_submit_success()
+              end
             )
-            if err then
-              on_submit_error("Failed to create pending review: " .. err)
-              return
-            end
-            M.state.pending_review = review
           end
 
-          api.add_review_thread_async(
-            M.state.pending_review.id, path, line, body, "RIGHT",
-            function(result, err)
-              if err then
-                on_submit_error("Failed to add comment: " .. err)
-                return
+          -- Ensure we have a pending review
+          if not M.state.pending_review then
+            api.get_or_create_pending_review_async(
+              M.state.owner, M.state.repo, M.state.pr_number,
+              function(review, err)
+                if err then
+                  on_submit_error("Failed to create pending review: " .. err)
+                  return
+                end
+                M.state.pending_review = review
+                do_add_thread(true)  -- allow one retry on stale ID
               end
-              on_submit_success()
-            end
-          )
+            )
+          else
+            do_add_thread(true)  -- allow one retry on stale ID
+          end
         else
           vim.notify("Direct (non-pending) review comments not yet implemented", vim.log.levels.WARN)
           submitted = false
@@ -550,12 +574,22 @@ function M.delete_comment(comment)
     prompt = string.format("Delete comment by %s?", comment.author),
   }, function(choice)
     if choice == "Yes" then
-      local success, err = api.delete_comment(comment.id)
-      if not success then
-        vim.notify("Failed to delete comment: " .. (err or "unknown error"), vim.log.levels.ERROR)
-        return
-      end
-      M.load_comments_async(M.state.pr_number)
+      local was_pending = comment.state == "PENDING"
+
+      api.delete_comment_async(comment.id, function(success, err)
+        if not success then
+          vim.notify("Failed to delete comment: " .. (err or "unknown error"), vim.log.levels.ERROR)
+          return
+        end
+
+        -- Clear pending review cache if we deleted a pending comment
+        -- (GitHub may have deleted the review if it was the last comment)
+        if was_pending then
+          M.state.pending_review = nil
+        end
+
+        M.load_comments_async(M.state.pr_number)
+      end)
     end
   end)
 end
@@ -598,14 +632,15 @@ function M.submit_review(event)
 
   -- Optionally add a review body
   vim.ui.input({ prompt = "Review summary (optional): " }, function(body)
-    local result, err = api.submit_review(M.state.pending_review.id, event, body or "")
-    if err then
-      vim.notify("Failed to submit review: " .. err, vim.log.levels.ERROR)
-      return
-    end
+    api.submit_review_async(M.state.pending_review.id, event, body or "", function(result, err)
+      if err then
+        vim.notify("Failed to submit review: " .. err, vim.log.levels.ERROR)
+        return
+      end
 
-    M.state.pending_review = nil
-    M.load_comments_async(M.state.pr_number)
+      M.state.pending_review = nil
+      M.load_comments_async(M.state.pr_number)
+    end)
   end)
 end
 
@@ -794,10 +829,17 @@ function M.view_original()
     return
   end
 
+  -- Check if a buffer with this name already exists and delete it
+  local buf_name = string.format("%s @ %s", path, commit:sub(1, 8))
+  local existing_buf = vim.fn.bufnr(buf_name)
+  if existing_buf ~= -1 then
+    vim.api.nvim_buf_delete(existing_buf, { force = true })
+  end
+
   -- Create a buffer with the content
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, content)
-  vim.api.nvim_buf_set_name(buf, string.format("%s @ %s", path, commit:sub(1, 8)))
+  vim.api.nvim_buf_set_name(buf, buf_name)
   vim.api.nvim_buf_set_option(buf, "modifiable", false)
   vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
 

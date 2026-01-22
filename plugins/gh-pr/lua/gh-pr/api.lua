@@ -3,7 +3,8 @@ local M = {}
 
 -- Await helper: blocks until async operation completes
 -- Returns (result, error) from the callback
-local function await(async_fn, ...)
+-- Exported so callers can explicitly block on async functions when needed
+function M.await(async_fn, ...)
   local done = false
   local result, err
 
@@ -23,6 +24,51 @@ local function await(async_fn, ...)
   end
 
   return result, err
+end
+
+-- Execute a gh command asynchronously, returning raw output (no JSON parsing)
+---@param args string[] Arguments to pass to gh
+---@param callback function Called with (output, error) when complete
+function M.gh_async_raw(args, callback)
+  local cmd = { "gh" }
+  for _, arg in ipairs(args) do
+    table.insert(cmd, arg)
+  end
+
+  local stdout_chunks = {}
+  local stderr_chunks = {}
+
+  vim.fn.jobstart(cmd, {
+    stdout_buffered = true,
+    stderr_buffered = true,
+    on_stdout = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stdout_chunks, line)
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stderr_chunks, line)
+          end
+        end
+      end
+    end,
+    on_exit = function(_, exit_code)
+      vim.schedule(function()
+        if exit_code ~= 0 then
+          callback(nil, table.concat(stderr_chunks, "\n"))
+          return
+        end
+        callback(vim.trim(table.concat(stdout_chunks, "\n")), nil)
+      end)
+    end,
+  })
 end
 
 -- Execute a gh command asynchronously (primary implementation)
@@ -78,27 +124,11 @@ function M.gh_async(args, callback)
   })
 end
 
--- Execute a gh command synchronously (blocks until complete)
----@param args string[]
----@return table|nil result
----@return string|nil error
-function M.gh(args)
-  return await(M.gh_async, args)
-end
-
 -- Execute a gh GraphQL query asynchronously
 ---@param query string
 ---@param callback function Called with (result, error) when complete
 function M.graphql_async(query, callback)
   M.gh_async({ "api", "graphql", "-f", "query=" .. query }, callback)
-end
-
--- Execute a gh GraphQL query synchronously
----@param query string
----@return table|nil result
----@return string|nil error
-function M.graphql(query)
-  return await(M.graphql_async, query)
 end
 
 -- Get repo owner and name from current git repo
@@ -184,60 +214,54 @@ function M.get_pr_comments_async(owner, repo, pr_number, callback)
   M.graphql_async(get_pr_comments_query(owner, repo, pr_number), callback)
 end
 
--- Get all comments for a PR (sync)
+-- Get or create a pending review for the current user (async)
 ---@param owner string
 ---@param repo string
 ---@param pr_number number
----@return table|nil comments
----@return string|nil error
-function M.get_pr_comments(owner, repo, pr_number)
-  return M.graphql(get_pr_comments_query(owner, repo, pr_number))
-end
-
--- Get or create a pending review for the current user
----@param owner string
----@param repo string
----@param pr_number number
----@return table|nil review {id, databaseId}
----@return string|nil error
-function M.get_or_create_pending_review(owner, repo, pr_number)
+---@param callback function Called with (review, error) when complete
+function M.get_or_create_pending_review_async(owner, repo, pr_number, callback)
   -- First check if there's already a pending review
-  local result, err = M.get_pr_comments(owner, repo, pr_number)
-  if err then
-    return nil, err
-  end
-
-  local pr = result.data.repository.pullRequest
-  local pending_reviews = pr.reviews.nodes or {}
-
-  -- Find existing pending review by current user
-  local current_user = vim.fn.system({ "gh", "api", "user", "-q", ".login" })
-  current_user = vim.trim(current_user)
-
-  for _, review in ipairs(pending_reviews) do
-    if review.state == "PENDING" and review.author and review.author.login == current_user then
-      return { id = review.id, databaseId = review.databaseId }, nil
+  M.get_pr_comments_async(owner, repo, pr_number, function(result, err)
+    if err then
+      callback(nil, err)
+      return
     end
-  end
 
-  -- Create a new pending review
-  local commit_sha = vim.fn.system({
-    "gh", "pr", "view", tostring(pr_number), "--json", "commits", "-q", ".commits[-1].oid"
-  })
-  commit_sha = vim.trim(commit_sha)
+    local pr = result.data.repository.pullRequest
+    local pending_reviews = pr.reviews.nodes or {}
 
-  local create_result, create_err = M.gh({
-    "api", string.format("repos/%s/%s/pulls/%d/reviews", owner, repo, pr_number),
-    "-X", "POST",
-    "-f", "commit_id=" .. commit_sha,
-    "-f", "body="
-  })
+    -- Find existing pending review (we filter by PENDING state in query, so just take first)
+    for _, review in ipairs(pending_reviews) do
+      if review.state == "PENDING" then
+        callback({ id = review.id, databaseId = review.databaseId }, nil)
+        return
+      end
+    end
 
-  if create_err then
-    return nil, create_err
-  end
+    -- No pending review found, create one
+    -- First get the commit SHA (returns plain text, not JSON)
+    M.gh_async_raw({
+      "pr", "view", tostring(pr_number), "--json", "commits", "-q", ".commits[-1].oid"
+    }, function(commit_sha, commit_err)
+      if commit_err then
+        callback(nil, "Failed to get commit SHA: " .. commit_err)
+        return
+      end
 
-  return { id = create_result.node_id, databaseId = create_result.id }, nil
+      M.gh_async({
+        "api", string.format("repos/%s/%s/pulls/%d/reviews", owner, repo, pr_number),
+        "-X", "POST",
+        "-f", "commit_id=" .. commit_sha,
+        "-f", "body="
+      }, function(create_result, create_err)
+        if create_err then
+          callback(nil, create_err)
+          return
+        end
+        callback({ id = create_result.node_id, databaseId = create_result.id }, nil)
+      end)
+    end)
+  end)
 end
 
 -- GraphQL mutation for adding review thread
@@ -279,11 +303,6 @@ function M.add_review_thread_async(review_id, path, line, body, side, callback)
   M.graphql_async(add_review_thread_query(review_id, path, line, body, side), callback)
 end
 
--- Add a new comment thread to a pending review (sync)
-function M.add_review_thread(review_id, path, line, body, side)
-  return M.graphql(add_review_thread_query(review_id, path, line, body, side))
-end
-
 -- GraphQL mutation for replying to thread
 local function reply_to_thread_query(thread_id, body)
   return string.format([[
@@ -315,11 +334,6 @@ function M.reply_to_thread_async(thread_id, body, callback)
   M.graphql_async(reply_to_thread_query(thread_id, body), callback)
 end
 
--- Reply to an existing thread (sync)
-function M.reply_to_thread(thread_id, body)
-  return M.graphql(reply_to_thread_query(thread_id, body))
-end
-
 -- Add a general PR comment (async)
 ---@param owner string
 ---@param repo string
@@ -331,14 +345,6 @@ function M.add_issue_comment_async(owner, repo, pr_number, body, callback)
     "api", string.format("repos/%s/%s/issues/%d/comments", owner, repo, pr_number),
     "-f", "body=" .. body
   }, callback)
-end
-
--- Add a general PR comment (sync)
-function M.add_issue_comment(owner, repo, pr_number, body)
-  return M.gh({
-    "api", string.format("repos/%s/%s/issues/%d/comments", owner, repo, pr_number),
-    "-f", "body=" .. body
-  })
 end
 
 -- Update a comment (async)
@@ -386,11 +392,6 @@ mutation {
   end)
 end
 
--- Update a comment (sync)
-function M.update_comment(comment_id, body)
-  return await(M.update_comment_async, comment_id, body)
-end
-
 -- Delete a comment (async)
 ---@param comment_id string GraphQL node ID
 ---@param callback function Called with (success, error) when complete
@@ -432,11 +433,6 @@ mutation {
   end)
 end
 
--- Delete a comment (sync)
-function M.delete_comment(comment_id)
-  return await(M.delete_comment_async, comment_id)
-end
-
 -- Submit a pending review (async)
 ---@param review_id string GraphQL node ID of the review
 ---@param event string "APPROVE", "REQUEST_CHANGES", or "COMMENT"
@@ -461,11 +457,6 @@ mutation {
 ]], review_id, event, vim.json.encode(body))
 
   M.graphql_async(query, callback)
-end
-
--- Submit a pending review (sync)
-function M.submit_review(review_id, event, body)
-  return await(M.submit_review_async, review_id, event, body)
 end
 
 return M
