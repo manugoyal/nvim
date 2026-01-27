@@ -159,6 +159,11 @@ query {
           author { login }
           createdAt
           url
+          reactionGroups {
+            content
+            viewerHasReacted
+            reactors { totalCount }
+          }
         }
       }
       reviewThreads(first: 100) {
@@ -186,6 +191,11 @@ query {
                 id
                 databaseId
                 state
+              }
+              reactionGroups {
+                content
+                viewerHasReacted
+                reactors { totalCount }
               }
             }
           }
@@ -304,12 +314,17 @@ function M.add_review_thread_async(review_id, path, line, body, side, callback)
 end
 
 -- GraphQL mutation for replying to thread
-local function reply_to_thread_query(thread_id, body)
+local function reply_to_thread_query(thread_id, body, review_id)
+  local review_field = ""
+  if review_id then
+    review_field = string.format('pullRequestReviewId: "%s"', review_id)
+  end
   return string.format([[
 mutation {
   addPullRequestReviewThreadReply(input: {
     pullRequestReviewThreadId: "%s"
     body: %s
+    %s
   }) {
     comment {
       id
@@ -323,15 +338,16 @@ mutation {
     }
   }
 }
-]], thread_id, vim.json.encode(body))
+]], thread_id, vim.json.encode(body), review_field)
 end
 
 -- Reply to an existing thread (async)
 ---@param thread_id string GraphQL node ID of the thread
 ---@param body string Comment body
+---@param review_id string|nil Optional pending review ID to associate reply with
 ---@param callback function Called with (result, error) when complete
-function M.reply_to_thread_async(thread_id, body, callback)
-  M.graphql_async(reply_to_thread_query(thread_id, body), callback)
+function M.reply_to_thread_async(thread_id, body, review_id, callback)
+  M.graphql_async(reply_to_thread_query(thread_id, body, review_id), callback)
 end
 
 -- Add a general PR comment (async)
@@ -455,6 +471,54 @@ mutation {
   }
 }
 ]], review_id, event, vim.json.encode(body))
+
+  M.graphql_async(query, callback)
+end
+
+-- Add a reaction to a comment (async)
+---@param subject_id string GraphQL node ID of the comment
+---@param content string Reaction type: THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET, EYES
+---@param callback function Called with (result, error) when complete
+function M.add_reaction_async(subject_id, content, callback)
+  local query = string.format([[
+mutation {
+  addReaction(input: {
+    subjectId: "%s"
+    content: %s
+  }) {
+    reaction {
+      content
+    }
+    subject {
+      id
+    }
+  }
+}
+]], subject_id, content)
+
+  M.graphql_async(query, callback)
+end
+
+-- Remove a reaction from a comment (async)
+---@param subject_id string GraphQL node ID of the comment
+---@param content string Reaction type: THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET, EYES
+---@param callback function Called with (result, error) when complete
+function M.remove_reaction_async(subject_id, content, callback)
+  local query = string.format([[
+mutation {
+  removeReaction(input: {
+    subjectId: "%s"
+    content: %s
+  }) {
+    reaction {
+      content
+    }
+    subject {
+      id
+    }
+  }
+}
+]], subject_id, content)
 
   M.graphql_async(query, callback)
 end

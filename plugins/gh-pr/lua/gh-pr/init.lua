@@ -27,6 +27,48 @@ M.state = {
   pending_review = nil, -- Current pending review {id, databaseId}
 }
 
+-- Map GitHub reaction content types to emoji
+local REACTION_EMOJI = {
+  THUMBS_UP = "👍",
+  THUMBS_DOWN = "👎",
+  LAUGH = "😄",
+  HOORAY = "🎉",
+  CONFUSED = "😕",
+  HEART = "❤️",
+  ROCKET = "🚀",
+  EYES = "👀",
+}
+
+-- Parse reaction groups into a display string and list of viewer's reactions
+---@return string display_string
+---@return table viewer_reactions List of reaction content types the viewer has added
+local function parse_reactions(reaction_groups)
+  if not reaction_groups then
+    return "", {}
+  end
+
+  local parts = {}
+  local viewer_reactions = {}
+
+  for _, group in ipairs(reaction_groups) do
+    local count = safe_get(group, "reactors", "totalCount") or 0
+    if count > 0 then
+      local emoji = REACTION_EMOJI[group.content] or group.content
+      if count > 1 then
+        table.insert(parts, emoji .. count)
+      else
+        table.insert(parts, emoji)
+      end
+    end
+    -- Track which reactions the viewer has added
+    if group.viewerHasReacted then
+      table.insert(viewer_reactions, group.content)
+    end
+  end
+
+  return table.concat(parts, " "), viewer_reactions
+end
+
 -- Parse comments from API response into a flat list
 ---@param data table API response
 ---@return table[] comments
@@ -36,6 +78,7 @@ local function parse_comments(data)
 
   -- Issue comments (general PR comments)
   for _, comment in ipairs(safe_get(pr, "comments", "nodes") or {}) do
+    local reactions, viewer_reactions = parse_reactions(comment.reactionGroups)
     table.insert(comments, {
       type = "issue",
       id = comment.id,
@@ -48,6 +91,8 @@ local function parse_comments(data)
       line = 0,
       state = "PUBLISHED",
       thread_id = nil,
+      reactions = reactions,
+      viewer_reactions = viewer_reactions,
     })
   end
 
@@ -59,6 +104,7 @@ local function parse_comments(data)
     for i, comment in ipairs(safe_get(thread, "comments", "nodes") or {}) do
       local state = safe_get(comment, "pullRequestReview", "state") or "COMMENTED"
       local is_outdated = is_thread_outdated or safe_get(comment, "outdated") or false
+      local reactions, viewer_reactions = parse_reactions(comment.reactionGroups)
       table.insert(comments, {
         type = "review",
         id = comment.id,
@@ -78,6 +124,8 @@ local function parse_comments(data)
         outdated = is_outdated,
         original_commit = safe_get(comment, "originalCommit", "oid"),
         diff_hunk = safe_get(comment, "diffHunk"),
+        reactions = reactions,
+        viewer_reactions = viewer_reactions,
       })
     end
   end
@@ -237,7 +285,8 @@ function M.populate_quickfix(opts)
   for _, comment in ipairs(issue_comments) do
     local body = comment.body:gsub("\n", " "):sub(1, 80)
     local state_indicator = comment.state == "PENDING" and "[PENDING] " or ""
-    local text = string.format("@%s: %s%s", comment.author, state_indicator, body)
+    local reactions_str = comment.reactions ~= "" and (" " .. comment.reactions) or ""
+    local text = string.format("@%s: %s%s%s", comment.author, state_indicator, body, reactions_str)
 
     table.insert(items, {
       filename = "PR_COMMENT",
@@ -286,7 +335,8 @@ function M.populate_quickfix(opts)
 
       -- Truncate body for display
       local body = comment.body:gsub("\n", " "):sub(1, 120)
-      local text = string.format("%s@%s: %s%s", prefix, comment.author, state_indicator, body)
+      local reactions_str = comment.reactions ~= "" and (" " .. comment.reactions) or ""
+      local text = string.format("%s@%s: %s%s%s", prefix, comment.author, state_indicator, body, reactions_str)
 
       table.insert(items, {
         filename = filename,
@@ -402,14 +452,49 @@ function M.add_comment(opts)
       vim.bo[buf].modified = false
 
       if opts.reply_to_thread then
-        -- Reply to existing thread (async)
-        api.reply_to_thread_async(opts.reply_to_thread, body, function(result, err)
-          if err then
-            on_submit_error("Failed to add reply: " .. err)
-            return
-          end
-          on_submit_success()
-        end)
+        -- Reply to existing thread (as pending review comment)
+        local function do_reply(retry_on_stale)
+          api.reply_to_thread_async(opts.reply_to_thread, body, M.state.pending_review.id, function(result, err)
+            if err then
+              -- If the review ID is stale, clear cache and retry once
+              if retry_on_stale and err:match("Could not resolve to a node") then
+                M.state.pending_review = nil
+                api.get_or_create_pending_review_async(
+                  M.state.owner, M.state.repo, M.state.pr_number,
+                  function(review, create_err)
+                    if create_err then
+                      on_submit_error("Failed to create pending review: " .. create_err)
+                      return
+                    end
+                    M.state.pending_review = review
+                    do_reply(false)  -- retry without further retries
+                  end
+                )
+                return
+              end
+              on_submit_error("Failed to add reply: " .. err)
+              return
+            end
+            on_submit_success()
+          end)
+        end
+
+        -- Ensure we have a pending review
+        if not M.state.pending_review then
+          api.get_or_create_pending_review_async(
+            M.state.owner, M.state.repo, M.state.pr_number,
+            function(review, err)
+              if err then
+                on_submit_error("Failed to create pending review: " .. err)
+                return
+              end
+              M.state.pending_review = review
+              do_reply(true)  -- allow one retry on stale ID
+            end
+          )
+        else
+          do_reply(true)  -- allow one retry on stale ID
+        end
       elseif path then
         -- Add review comment (to pending review)
         local pending = opts.pending ~= false -- default to pending
@@ -611,11 +696,96 @@ function M.reply_to_thread()
   M.add_comment({ reply_to_thread = comment.thread_id })
 end
 
+-- Available GitHub reactions with display labels
+local REACTIONS = {
+  { content = "THUMBS_UP", label = "👍 +1" },
+  { content = "THUMBS_DOWN", label = "👎 -1" },
+  { content = "LAUGH", label = "😄 Laugh" },
+  { content = "HOORAY", label = "🎉 Hooray" },
+  { content = "CONFUSED", label = "😕 Confused" },
+  { content = "HEART", label = "❤️ Heart" },
+  { content = "ROCKET", label = "🚀 Rocket" },
+  { content = "EYES", label = "👀 Eyes" },
+}
+
+-- Add a reaction to a comment
+function M.react_to_comment()
+  local comment = M.get_current_comment()
+
+  if not comment then
+    vim.notify("No comment selected", vim.log.levels.WARN)
+    return
+  end
+
+  -- Build selection list
+  local labels = {}
+  for _, reaction in ipairs(REACTIONS) do
+    table.insert(labels, reaction.label)
+  end
+
+  vim.ui.select(labels, {
+    prompt = "Add reaction:",
+  }, function(choice, idx)
+    if not choice or not idx then
+      return
+    end
+
+    local reaction = REACTIONS[idx]
+    api.add_reaction_async(comment.id, reaction.content, function(result, err)
+      if err then
+        vim.notify("Failed to add reaction: " .. err, vim.log.levels.ERROR)
+        return
+      end
+      M.load_comments_async(M.state.pr_number)
+    end)
+  end)
+end
+
+-- Remove a reaction from a comment
+function M.unreact_to_comment()
+  local comment = M.get_current_comment()
+
+  if not comment then
+    vim.notify("No comment selected", vim.log.levels.WARN)
+    return
+  end
+
+  -- Check if viewer has any reactions on this comment
+  if not comment.viewer_reactions or #comment.viewer_reactions == 0 then
+    vim.notify("You have no reactions on this comment", vim.log.levels.INFO)
+    return
+  end
+
+  -- Build selection list from viewer's reactions
+  local labels = {}
+  for _, content in ipairs(comment.viewer_reactions) do
+    local emoji = REACTION_EMOJI[content] or content
+    table.insert(labels, emoji .. " " .. content:gsub("_", " "):lower())
+  end
+
+  vim.ui.select(labels, {
+    prompt = "Remove reaction:",
+  }, function(choice, idx)
+    if not choice or not idx then
+      return
+    end
+
+    local content = comment.viewer_reactions[idx]
+    api.remove_reaction_async(comment.id, content, function(result, err)
+      if err then
+        vim.notify("Failed to remove reaction: " .. err, vim.log.levels.ERROR)
+        return
+      end
+      M.load_comments_async(M.state.pr_number)
+    end)
+  end)
+end
+
 -- Submit pending review
 ---@param event string|nil "APPROVE", "REQUEST_CHANGES", or "COMMENT" (will prompt if nil)
 function M.submit_review(event)
-  if not M.state.pending_review then
-    vim.notify("No pending review", vim.log.levels.WARN)
+  if not M.state.pr_number then
+    vim.notify("No PR loaded. Use :GHPRComments first.", vim.log.levels.ERROR)
     return
   end
 
@@ -630,9 +800,9 @@ function M.submit_review(event)
     return
   end
 
-  -- Optionally add a review body
-  vim.ui.input({ prompt = "Review summary (optional): " }, function(body)
-    api.submit_review_async(M.state.pending_review.id, event, body or "", function(result, err)
+  -- Helper to do the actual submit
+  local function do_submit(review_id, body)
+    api.submit_review_async(review_id, event, body or "", function(result, err)
       if err then
         vim.notify("Failed to submit review: " .. err, vim.log.levels.ERROR)
         return
@@ -641,6 +811,25 @@ function M.submit_review(event)
       M.state.pending_review = nil
       M.load_comments_async(M.state.pr_number)
     end)
+  end
+
+  -- Optionally add a review body
+  vim.ui.input({ prompt = "Review summary (optional): " }, function(body)
+    if M.state.pending_review then
+      do_submit(M.state.pending_review.id, body)
+    else
+      -- No pending review, create one first then submit
+      api.get_or_create_pending_review_async(
+        M.state.owner, M.state.repo, M.state.pr_number,
+        function(review, err)
+          if err then
+            vim.notify("Failed to create review: " .. err, vim.log.levels.ERROR)
+            return
+          end
+          do_submit(review.id, body)
+        end
+      )
+    end
   end)
 end
 
@@ -907,6 +1096,14 @@ function M.setup(opts)
     M.goto_comment()
   end, { desc = "Go to comment location" })
 
+  vim.api.nvim_create_user_command("GHPRReact", function()
+    M.react_to_comment()
+  end, { desc = "Add reaction to selected comment" })
+
+  vim.api.nvim_create_user_command("GHPRUnreact", function()
+    M.unreact_to_comment()
+  end, { desc = "Remove reaction from selected comment" })
+
   -- Set up quickfix keymaps
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "qf",
@@ -925,6 +1122,8 @@ function M.setup(opts)
       vim.keymap.set("n", "r", M.reply_to_thread, map_opts)
       vim.keymap.set("n", "p", M.preview_comment, map_opts)
       vim.keymap.set("n", "o", M.view_original, map_opts)
+      vim.keymap.set("n", "+", M.react_to_comment, map_opts)
+      vim.keymap.set("n", "-", M.unreact_to_comment, map_opts)
       vim.keymap.set("n", "R", function() M.load_comments(M.state.pr_number) end, map_opts)
       vim.keymap.set("n", "S", M.submit_review, map_opts)
     end,

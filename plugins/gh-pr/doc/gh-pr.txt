@@ -64,6 +64,14 @@ and reply to comments directly from Neovim.
 :GHPRGoto
     Jump to the file and line of the selected comment.
 
+                                                                 *:GHPRReact*
+:GHPRReact
+    Add an emoji reaction to the selected comment.
+
+                                                               *:GHPRUnreact*
+:GHPRUnreact
+    Remove one of your emoji reactions from the selected comment.
+
 ==============================================================================
 4. QUICKFIX KEYMAPS                                          *gh-pr-keymaps*
 
@@ -75,6 +83,8 @@ are available:
     r           Reply to thread under cursor
     p           Preview full comment in floating window
     o           View file at original commit (useful for outdated comments)
+    +           Add emoji reaction to comment under cursor
+    -           Remove your emoji reaction from comment under cursor
     R           Refresh comments from GitHub
     S           Submit pending review
     <CR>        Jump to comment location in file
