@@ -9,17 +9,23 @@ CONTENTS                                                    *gh-pr-contents*
     1. Introduction .......................... |gh-pr-introduction|
     2. Requirements .......................... |gh-pr-requirements|
     3. Commands .............................. |gh-pr-commands|
-    4. Quickfix Keymaps ...................... |gh-pr-keymaps|
-    5. Comment States ........................ |gh-pr-states|
-    6. Workflow .............................. |gh-pr-workflow|
+    4. Diff Review ........................... |gh-pr-review|
+    5. Comments Buffer ....................... |gh-pr-comments-buffer|
+    6. Comment States ........................ |gh-pr-states|
+    7. Workflow .............................. |gh-pr-workflow|
+    8. Keymaps ............................... |gh-pr-keymaps|
 
 ==============================================================================
 1. INTRODUCTION                                          *gh-pr-introduction*
 
-gh-pr.nvim is a Neovim plugin for managing GitHub PR comments, including
-support for pending review comments. It displays comments in a quickfix
-window with threading visualization and allows you to add, edit, delete,
-and reply to comments directly from Neovim.
+gh-pr.nvim is a Neovim plugin for managing GitHub PR comments and reviewing
+diffs. It provides:
+
+- Side-by-side diff viewing with LSP support on the current version
+- A dedicated comments buffer with threading visualization
+- Support for pending review comments
+- Navigation between files and comments
+- Add, edit, delete, and reply to comments directly from Neovim
 
 ==============================================================================
 2. REQUIREMENTS                                          *gh-pr-requirements*
@@ -30,10 +36,52 @@ and reply to comments directly from Neovim.
 ==============================================================================
 3. COMMANDS                                                  *gh-pr-commands*
 
+DIFF REVIEW COMMANDS ~
+                                                               *:GHPRReview*
+:GHPRReview [pr_number]
+    Start the diff review UI. Opens a file list panel on the left and
+    side-by-side diff views (base vs current) on the right. If no PR
+    number is given, uses the current branch's associated PR.
+
+                                                          *:GHPRReviewClose*
+:GHPRReviewClose
+    Close the diff review UI and all associated windows.
+
+                                                             *:GHPRNextFile*
+:GHPRNextFile
+    Navigate to the next file in the review. Also available as `]f` in
+    the diff windows.
+
+                                                             *:GHPRPrevFile*
+:GHPRPrevFile
+    Navigate to the previous file in the review. Also available as `[f`
+    in the diff windows.
+
+                                                           *:GHPRReloadFile*
+:GHPRReloadFile
+    Reload the diff for the currently selected file and restore the
+    canonical layout. If the file list or comments windows were closed,
+    this will recreate them. Use this to restore the full review UI.
+
+COMMENT COMMANDS ~
                                                              *:GHPRComments*
 :GHPRComments [pr_number]
-    Load PR comments into quickfix. If no PR number is given, uses the
-    current branch's associated PR.
+    Load PR comments into a dedicated comments buffer. If no PR number
+    is given, uses the current branch's associated PR.
+
+                                                        *:GHPRCommentsClose*
+:GHPRCommentsClose
+    Close the comments buffer.
+
+                                                          *:GHPRNextComment*
+:GHPRNextComment
+    Navigate to the next comment. If the review panel is open, also
+    selects the corresponding file and jumps to the comment location.
+
+                                                          *:GHPRPrevComment*
+:GHPRPrevComment
+    Navigate to the previous comment. If the review panel is open, also
+    selects the corresponding file and jumps to the comment location.
 
                                                            *:GHPRCommentAdd*
 :GHPRCommentAdd
@@ -45,17 +93,17 @@ and reply to comments directly from Neovim.
 
                                                           *:GHPRCommentEdit*
 :GHPRCommentEdit
-    Edit the selected comment in the quickfix window.
+    Edit the selected comment in the comments buffer.
 
                                                         *:GHPRCommentDelete*
 :GHPRCommentDelete
-    Delete the selected comment in the quickfix window.
+    Delete the selected comment in the comments buffer.
 
                                                          *:GHPRCommentReply*
 :GHPRCommentReply
-    Reply to the selected thread in the quickfix window.
+    Reply to the selected thread in the comments buffer.
 
-                                                          *:GHPRReviewSubmit*
+                                                         *:GHPRReviewSubmit*
 :GHPRReviewSubmit [event]
     Submit your pending review. Event can be APPROVE, COMMENT, or
     REQUEST_CHANGES. If not specified, you will be prompted to choose.
@@ -64,68 +112,236 @@ and reply to comments directly from Neovim.
 :GHPRGoto
     Jump to the file and line of the selected comment.
 
-                                                                 *:GHPRReact*
+                                                                *:GHPRReact*
 :GHPRReact
     Add an emoji reaction to the selected comment.
 
-                                                               *:GHPRUnreact*
+                                                              *:GHPRUnreact*
 :GHPRUnreact
     Remove one of your emoji reactions from the selected comment.
 
 ==============================================================================
-4. QUICKFIX KEYMAPS                                          *gh-pr-keymaps*
+4. DIFF REVIEW                                                *gh-pr-review*
 
-When viewing PR comments in the quickfix window, the following keymaps
-are available:
+The diff review UI provides a unified layout:
 
-    e           Edit comment under cursor
-    d           Delete comment under cursor
-    r           Reply to thread under cursor
-    p           Preview full comment in floating window
-    o           View file at original commit (useful for outdated comments)
-    +           Add emoji reaction to comment under cursor
-    -           Remove your emoji reaction from comment under cursor
-    R           Refresh comments from GitHub
-    S           Submit pending review
-    <CR>        Jump to comment location in file
+    +------------+------------------------+------------------------+
+    |            |                        |                        |
+    | File List  |   Base Version         |   Current Version      |
+    |   (10%)    |   (read-only)          |   (with LSP!)          |
+    |            |                        |                        |
+    +------------+------------------------+------------------------+
+    |                                                              |
+    |                   Comments Buffer                            |
+    |                                                              |
+    +--------------------------------------------------------------+
+
+FILE LIST PANEL ~
+
+The left panel shows all changed files in the PR with status indicators:
+>
+    +  Added file
+    -  Removed file
+    ~  Modified file
+    →  Renamed file
+    C  Copied file
+<
+The currently selected file is marked with `▶`.
+
+Stats show additions/deletions: `+10/-5`
+
+DIFF WINDOWS ~
+
+- Left window: Base version (at merge-base commit), read-only
+- Right window: Current version with full LSP support
+
+The windows are synced in Vim's diff mode, showing additions, deletions,
+and changes with highlighting.
+
+NAVIGATION ~
+
+In the file list:
+    <CR>        Open diff for the file under cursor
+    j/k         Move up/down in file list
+    ]f          Next file
+    [f          Previous file
+    q           Close review
+
+In the diff windows:
+    ]f          Next file
+    [f          Previous file
+    q           Close review
 
 ==============================================================================
-5. COMMENT STATES                                              *gh-pr-states*
+5. COMMENTS BUFFER                                   *gh-pr-comments-buffer*
 
-Comments can have the following states, shown as tags in the quickfix:
+Comments are displayed in a dedicated `[PR Comments]` buffer (not quickfix).
+This provides better integration with the diff review panel and more
+control over navigation.
 
-[PENDING]       Comments in your pending (draft) review. These are only
-                visible to you until you submit the review.
+LAYOUT ~
+>
+    PR #123 Comments (11)
+    ────────────────────────────────────────────────────────────
 
-[OUTDATED]      Comments on code that has since changed. The commented
-                line may no longer exist or may have moved. Use 'o' to
-                view the file at the original commit.
+    General Comments:
 
-(no tag)        Published comments visible to everyone.
+    ▶ @user1: First general comment on the PR...
+      @user2: Reply to the general discussion...
 
-==============================================================================
-6. WORKFLOW                                                  *gh-pr-workflow*
+    Review Comments:
 
-A typical workflow for reviewing a PR:
+      src/main.lua:42
+        ┬ @reviewer: This function could be simplified...
+        └ @author: Good point, I'll refactor this.
 
-1. Open a file in your PR branch
-2. Run `:GHPRComments` or press `<leader>ghc` to load comments
-3. Navigate the quickfix with `j`/`k` or `]q`/`[q`
-4. Press `p` to preview a comment, `<CR>` to jump to its location
-5. Press `o` on outdated comments to see the original code context
-6. Position cursor on a line and run `:GHPRCommentAdd` to add a
-   pending comment, or run `:GHPRCommentAddGeneral` for a general comment
-7. Write your comment in the buffer that opens, then `:wq` to submit
-8. When done reviewing, press `S` or run `:GHPRReviewSubmit` and select
-   APPROVE, COMMENT, or REQUEST_CHANGES
+      src/utils.lua:15
+        ─ @reviewer: [P] Consider adding error handling here
 
-Threading display in quickfix:
+    ────────────────────────────────────────────────────────────
+    j/k:move  Enter:goto  e:edit  d:delete  r:reply  p:preview
+    +:react  -:unreact  R:refresh  S:submit  o:view original
+<
+
+THREADING DISPLAY ~
 >
     ┬  Start of a thread with replies
     ├  Middle reply in a thread
     └  Last reply in a thread
     ─  Single comment with no replies
 <
+
+INDICATORS ~
+>
+    ▶          Currently selected comment
+    [P]        Pending comment (in your draft review)
+    [O]        Outdated comment (code has changed)
+<
+
+KEYMAPS IN COMMENTS BUFFER ~
+
+    j           Move to next comment
+    k           Move to previous comment
+    <CR>        Go to comment location (also selects file in review panel)
+    e           Edit comment under cursor
+    d           Delete comment under cursor
+    r           Reply to thread under cursor
+    p           Preview full comment in floating window
+    o           View file at original commit (for outdated comments)
+    +           Add emoji reaction
+    -           Remove your emoji reaction
+    R           Refresh comments from GitHub
+    S           Submit pending review
+    q           Close comments buffer
+
+==============================================================================
+6. COMMENT STATES                                              *gh-pr-states*
+
+Comments can have the following states:
+
+[P] or [PENDING]
+                Comments in your pending (draft) review. These are only
+                visible to you until you submit the review.
+
+[O] or [OUTDATED]
+                Comments on code that has since changed. The commented
+                line may no longer exist or may have moved. Use 'o' to
+                view the file at the original commit.
+
+(no tag)        Published comments visible to everyone.
+
+==============================================================================
+7. WORKFLOW                                                  *gh-pr-workflow*
+
+REVIEWING A PR ~
+
+1. Check out the PR branch
+2. Run `:GHPRReview` (or `<leader>ghr`) to open the unified review UI
+   - File list appears on the left
+   - Side-by-side diff in the middle
+   - Comments load automatically at the bottom
+3. Navigate files with `]f`/`[f` or click in the file list
+4. Navigate comments with `j`/`k` in the comments buffer, or use
+   `<leader>gh]`/`<leader>gh[` from anywhere
+5. Press `<CR>` on a comment to jump to its location in the diff
+6. Add comments with `:GHPRCommentAdd` on any line
+7. When done, press `S` or run `:GHPRReviewSubmit` to submit
+
+RESTORING THE LAYOUT ~
+
+If you accidentally close the file list or comments panel:
+- Run `:GHPRReloadFile` (or `<leader>gh.`) to restore the full layout
+- This recreates any missing panels and reloads the current file diff
+
+QUICK COMMENT REVIEW (without diff UI) ~
+
+1. Run `:GHPRComments` to load comments
+2. Navigate with `j`/`k`, press `<CR>` to jump to files
+3. Use `p` to preview full comments, `o` for outdated context
+
+ADDING COMMENTS ~
+
+1. Position cursor on the line you want to comment on
+2. Run `:GHPRCommentAdd` (or `<leader>gha`)
+3. Write your comment in the buffer that opens
+4. `:w` to submit (as pending), `:wq` to submit and close
+   - You'll be returned to the comments buffer automatically
+   - Submission happens in the background without interrupting your flow
+
+SUBMITTING YOUR REVIEW ~
+
+1. Press `S` in the comments buffer, or run `:GHPRReviewSubmit`
+2. Choose: APPROVE, COMMENT, or REQUEST_CHANGES
+3. Optionally add a summary message
+
+==============================================================================
+8. KEYMAPS                                                    *gh-pr-keymaps*
+
+SUGGESTED GLOBAL KEYMAPS ~
+
+Add these to your init.lua:
+>lua
+    -- Load comments
+    vim.keymap.set('n', '<leader>ghc', '<cmd>GHPRComments<cr>')
+
+    -- Start diff review
+    vim.keymap.set('n', '<leader>ghr', '<cmd>GHPRReview<cr>')
+
+    -- Add comment on current line
+    vim.keymap.set('n', '<leader>gha', '<cmd>GHPRCommentAdd<cr>')
+
+    -- File navigation (also works as ]f/[f in review windows)
+    vim.keymap.set('n', '<leader>ghn', '<cmd>GHPRNextFile<cr>')
+    vim.keymap.set('n', '<leader>ghp', '<cmd>GHPRPrevFile<cr>')
+
+    -- Comment navigation (works from anywhere)
+    vim.keymap.set('n', '<leader>gh]', '<cmd>GHPRNextComment<cr>')
+    vim.keymap.set('n', '<leader>gh[', '<cmd>GHPRPrevComment<cr>')
+
+    -- Reload current file diff
+    vim.keymap.set('n', '<leader>gh.', '<cmd>GHPRReloadFile<cr>')
+<
+
+BUFFER-LOCAL KEYMAPS ~
+
+File List Buffer (`[PR Files]`):
+    <CR>        Open diff for file
+    j/k         Navigate
+    ]f/[f       Next/prev file
+    q           Close review
+
+Diff Windows:
+    ]f/[f       Next/prev file
+    q           Close review
+
+Comments Buffer (`[PR Comments]`):
+    j/k         Navigate between comments
+    <CR>        Go to comment location
+    e/d/r       Edit/delete/reply
+    p/o         Preview/view original
+    +/-         Add/remove reaction
+    R/S         Refresh/submit
+    q           Close
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

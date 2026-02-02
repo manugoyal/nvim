@@ -25,6 +25,19 @@ M.state = {
   pr_number = nil,
   comments = {},      -- Parsed comments
   pending_review = nil, -- Current pending review {id, databaseId}
+  -- Diff review state
+  files = {},         -- List of changed files {path, status, additions, deletions}
+  merge_base = nil,   -- Merge base commit
+  current_file_idx = 0, -- Currently selected file (1-indexed, 0 = none)
+  file_list_buf = nil,  -- Buffer for file list
+  file_list_win = nil,  -- Window for file list
+  diff_win_left = nil,  -- Left diff window (base version)
+  diff_win_right = nil, -- Right diff window (current version)
+  -- Comments buffer state
+  comments_buf = nil,   -- Buffer for comments list
+  comments_win = nil,   -- Window for comments list
+  current_comment_idx = 0, -- Currently selected comment (1-indexed)
+  comment_line_map = {}, -- Maps line numbers to comment indices
 }
 
 -- Map GitHub reaction content types to emoji
@@ -162,6 +175,7 @@ end
 function M.load_comments_async(pr_number, opts)
   opts = opts or {}
   local focus = opts.focus or false
+  local on_complete = opts.on_complete
 
   if not pr_number or not M.state.owner or not M.state.repo then
     return
@@ -185,8 +199,13 @@ function M.load_comments_async(pr_number, opts)
       end
     end
 
-    -- Populate quickfix
+    -- Populate comments buffer
     M.populate_quickfix({ focus = focus })
+
+    -- Call completion callback if provided
+    if on_complete then
+      on_complete()
+    end
   end)
 end
 
@@ -255,13 +274,15 @@ function M.load_comments(pr_number, opts)
   vim.notify(string.format("Loaded %d comments for PR #%d", #M.state.comments, pr_number), vim.log.levels.INFO)
 end
 
--- Populate quickfix with comments, grouped by thread
----@param opts table|nil {focus: boolean} whether to focus quickfix (default true)
-function M.populate_quickfix(opts)
-  opts = opts or {}
-  local focus = opts.focus ~= false  -- default to true
+-- Render the comments buffer
+local function render_comments_buffer()
+  if not M.state.comments_buf or not vim.api.nvim_buf_is_valid(M.state.comments_buf) then
+    return
+  end
 
-  local items = {}
+  local lines = {}
+  M.state.comment_line_map = {}
+  local comment_idx = 0
 
   -- Group comments by thread_id
   local threads = {}
@@ -281,95 +302,298 @@ function M.populate_quickfix(opts)
     end
   end
 
+  -- Add header
+  table.insert(lines, string.format("PR #%d Comments (%d)", M.state.pr_number or 0, #M.state.comments))
+  table.insert(lines, string.rep("─", 60))
+  table.insert(lines, "")
+
   -- Add issue comments first
-  for _, comment in ipairs(issue_comments) do
-    local body = comment.body:gsub("\n", " "):sub(1, 80)
-    local state_indicator = comment.state == "PENDING" and "[PENDING] " or ""
-    local reactions_str = comment.reactions ~= "" and (" " .. comment.reactions) or ""
-    local text = string.format("@%s: %s%s%s", comment.author, state_indicator, body, reactions_str)
-
-    table.insert(items, {
-      filename = "PR_COMMENT",
-      lnum = 0,
-      col = 0,
-      text = text,
-      user_data = comment,
-    })
-  end
-
-  -- Add a separator if we have both issue comments and review threads
-  if #issue_comments > 0 and #thread_order > 0 then
-    table.insert(items, {
-      filename = "---",
-      lnum = 0,
-      col = 0,
-      text = "--- Review Comments ---",
-      user_data = nil,
-    })
-  end
-
-  -- Add review threads with threading indicators
-  for _, tid in ipairs(thread_order) do
-    local thread_comments = threads[tid]
-    for i, comment in ipairs(thread_comments) do
-      local filename = comment.path or "REVIEW"
-      local lnum = comment.line or 0
-
-      -- Threading indicator
-      local prefix = ""
-      if i == 1 then
-        prefix = #thread_comments > 1 and "┬ " or "─ "
-      elseif i == #thread_comments then
-        prefix = "└ "
-      else
-        prefix = "├ "
-      end
-
-      local state_indicator = ""
-      if comment.state == "PENDING" then
-        state_indicator = "[PENDING] "
-      end
-      if comment.outdated then
-        state_indicator = state_indicator .. "[OUTDATED] "
-      end
-
-      -- Truncate body for display
-      local body = comment.body:gsub("\n", " "):sub(1, 120)
+  if #issue_comments > 0 then
+    table.insert(lines, "General Comments:")
+    table.insert(lines, "")
+    for _, comment in ipairs(issue_comments) do
+      comment_idx = comment_idx + 1
+      local marker = comment_idx == M.state.current_comment_idx and "▶" or " "
+      local body = comment.body:gsub("\n", " "):sub(1, 70)
+      local state_indicator = comment.state == "PENDING" and "[PENDING] " or ""
       local reactions_str = comment.reactions ~= "" and (" " .. comment.reactions) or ""
-      local text = string.format("%s@%s: %s%s%s", prefix, comment.author, state_indicator, body, reactions_str)
 
-      table.insert(items, {
-        filename = filename,
-        lnum = lnum,
-        col = 0,
-        text = text,
-        user_data = comment,
-      })
+      local line = string.format("%s @%s: %s%s%s", marker, comment.author, state_indicator, body, reactions_str)
+      table.insert(lines, line)
+      M.state.comment_line_map[#lines] = comment_idx
+    end
+    table.insert(lines, "")
+  end
+
+  -- Add review threads
+  if #thread_order > 0 then
+    table.insert(lines, "Review Comments:")
+    table.insert(lines, "")
+    for _, tid in ipairs(thread_order) do
+      local thread_comments = threads[tid]
+      local first_comment = thread_comments[1]
+
+      -- Show file:line header for thread
+      local location = first_comment.path or "REVIEW"
+      if first_comment.line and first_comment.line > 0 then
+        location = location .. ":" .. first_comment.line
+      end
+      table.insert(lines, string.format("  %s", location))
+
+      for i, comment in ipairs(thread_comments) do
+        comment_idx = comment_idx + 1
+        local marker = comment_idx == M.state.current_comment_idx and "▶" or " "
+
+        -- Threading indicator
+        local prefix = ""
+        if i == 1 then
+          prefix = #thread_comments > 1 and "┬" or "─"
+        elseif i == #thread_comments then
+          prefix = "└"
+        else
+          prefix = "├"
+        end
+
+        local state_indicator = ""
+        if comment.state == "PENDING" then
+          state_indicator = "[P] "
+        end
+        if comment.outdated then
+          state_indicator = state_indicator .. "[O] "
+        end
+
+        local body = comment.body:gsub("\n", " "):sub(1, 60)
+        local reactions_str = comment.reactions ~= "" and (" " .. comment.reactions) or ""
+
+        local line = string.format("%s   %s @%s: %s%s%s", marker, prefix, comment.author, state_indicator, body, reactions_str)
+        table.insert(lines, line)
+        M.state.comment_line_map[#lines] = comment_idx
+      end
+      table.insert(lines, "")
     end
   end
 
-  vim.fn.setqflist({}, "r", {
-    title = string.format("PR #%d Comments (%d)", M.state.pr_number or 0, #M.state.comments),
-    items = items,
-  })
+  -- Add help text at the bottom
+  table.insert(lines, string.rep("─", 60))
+  table.insert(lines, "j/k:move  Enter:goto  e:edit  d:delete  r:reply  p:preview")
+  table.insert(lines, "+:react  -:unreact  R:refresh  S:submit  o:view original")
 
-  if focus then
-    vim.cmd("copen")
+  vim.api.nvim_buf_set_option(M.state.comments_buf, "modifiable", true)
+  vim.api.nvim_buf_set_lines(M.state.comments_buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(M.state.comments_buf, "modifiable", false)
+
+  -- Move cursor to current comment
+  if M.state.current_comment_idx > 0 then
+    for line_num, idx in pairs(M.state.comment_line_map) do
+      if idx == M.state.current_comment_idx then
+        if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
+          vim.api.nvim_win_set_cursor(M.state.comments_win, { line_num, 0 })
+        end
+        break
+      end
+    end
   end
 end
 
--- Get the comment under cursor in quickfix
----@return table|nil comment
+-- Get comment at current cursor position in comments buffer
 function M.get_current_comment()
-  -- Use cursor line position (1-based) instead of selected quickfix item
-  local cursor_line = vim.fn.line(".")
+  if not M.state.comments_buf or not vim.api.nvim_buf_is_valid(M.state.comments_buf) then
+    return nil
+  end
 
-  -- Get all items and return the one at cursor line
-  local items = vim.fn.getqflist({ items = 1 }).items
-  if items and items[cursor_line] then
-    return items[cursor_line].user_data
+  local cursor_line = vim.fn.line(".")
+  local comment_idx = M.state.comment_line_map[cursor_line]
+
+  if comment_idx and M.state.comments[comment_idx] then
+    M.state.current_comment_idx = comment_idx
+    return M.state.comments[comment_idx]
   end
   return nil
+end
+
+-- Navigate to next comment
+function M.next_comment()
+  if M.state.current_comment_idx < #M.state.comments then
+    M.state.current_comment_idx = M.state.current_comment_idx + 1
+    render_comments_buffer()
+    M.goto_current_comment()
+  else
+    vim.notify("Already at last comment", vim.log.levels.INFO)
+  end
+end
+
+-- Navigate to previous comment
+function M.prev_comment()
+  if M.state.current_comment_idx > 1 then
+    M.state.current_comment_idx = M.state.current_comment_idx - 1
+    render_comments_buffer()
+    M.goto_current_comment()
+  else
+    vim.notify("Already at first comment", vim.log.levels.INFO)
+  end
+end
+
+-- Go to the currently selected comment's location
+function M.goto_current_comment()
+  if M.state.current_comment_idx < 1 or M.state.current_comment_idx > #M.state.comments then
+    return
+  end
+
+  local comment = M.state.comments[M.state.current_comment_idx]
+  if not comment or not comment.path then
+    return
+  end
+
+  -- If review panel is open, select the file there
+  if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    M.select_file_by_path(comment.path)
+    -- After opening diff, jump to the specific line in the right pane
+    if comment.line and comment.line > 0 and M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+      vim.api.nvim_set_current_win(M.state.diff_win_right)
+      pcall(vim.api.nvim_win_set_cursor, M.state.diff_win_right, { comment.line, 0 })
+      vim.cmd("normal! zz")
+    end
+  end
+end
+
+-- Close the comments buffer
+function M.close_comments()
+  if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
+    vim.api.nvim_win_close(M.state.comments_win, true)
+  end
+  M.state.comments_win = nil
+  M.state.comments_buf = nil
+end
+
+-- Set up keymaps for the comments buffer
+local function setup_comments_keymaps()
+  if not M.state.comments_buf or not vim.api.nvim_buf_is_valid(M.state.comments_buf) then
+    return
+  end
+
+  local map_opts = { buffer = M.state.comments_buf, silent = true }
+
+  vim.keymap.set("n", "<CR>", function()
+    local comment = M.get_current_comment()
+    if comment then
+      M.goto_current_comment()
+    end
+  end, map_opts)
+
+  vim.keymap.set("n", "j", function()
+    -- Move to next comment line
+    local cursor = vim.fn.line(".")
+    -- Get sorted line numbers
+    local sorted_lines = {}
+    for line_num, _ in pairs(M.state.comment_line_map) do
+      table.insert(sorted_lines, line_num)
+    end
+    table.sort(sorted_lines)
+    -- Find next line after cursor
+    for _, line_num in ipairs(sorted_lines) do
+      if line_num > cursor then
+        vim.api.nvim_win_set_cursor(0, { line_num, 0 })
+        M.get_current_comment()  -- Update selection
+        render_comments_buffer()
+        return
+      end
+    end
+  end, map_opts)
+
+  vim.keymap.set("n", "k", function()
+    -- Move to prev comment line
+    local cursor = vim.fn.line(".")
+    -- Get sorted line numbers in reverse
+    local sorted_lines = {}
+    for line_num, _ in pairs(M.state.comment_line_map) do
+      table.insert(sorted_lines, line_num)
+    end
+    table.sort(sorted_lines, function(a, b) return a > b end)
+    -- Find prev line before cursor
+    for _, line_num in ipairs(sorted_lines) do
+      if line_num < cursor then
+        vim.api.nvim_win_set_cursor(0, { line_num, 0 })
+        M.get_current_comment()  -- Update selection
+        render_comments_buffer()
+        return
+      end
+    end
+  end, map_opts)
+
+  vim.keymap.set("n", "e", M.edit_comment, map_opts)
+  vim.keymap.set("n", "d", M.delete_comment, map_opts)
+  vim.keymap.set("n", "r", M.reply_to_thread, map_opts)
+  vim.keymap.set("n", "p", M.preview_comment, map_opts)
+  vim.keymap.set("n", "o", M.view_original, map_opts)
+  vim.keymap.set("n", "+", M.react_to_comment, map_opts)
+  vim.keymap.set("n", "-", M.unreact_to_comment, map_opts)
+  vim.keymap.set("n", "R", function() M.load_comments(M.state.pr_number) end, map_opts)
+  vim.keymap.set("n", "S", M.submit_review, map_opts)
+  vim.keymap.set("n", "q", M.close_comments, map_opts)
+end
+
+-- Populate comments buffer (replaces quickfix)
+---@param opts table|nil {focus: boolean} whether to focus comments buffer (default true)
+function M.populate_comments_buffer(opts)
+  opts = opts or {}
+  local focus = opts.focus ~= false  -- default to true
+
+  -- Reuse existing buffer if valid, otherwise create new one
+  local need_new_buffer = not M.state.comments_buf or not vim.api.nvim_buf_is_valid(M.state.comments_buf)
+
+  if need_new_buffer then
+    -- Delete any stale buffers with this name
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name:match("%[PR Comments%]$") then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end
+    end
+
+    -- Create buffer (use "hide" so buffer persists when window closes)
+    M.state.comments_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_option(M.state.comments_buf, "buftype", "nofile")
+    vim.api.nvim_buf_set_option(M.state.comments_buf, "bufhidden", "hide")
+    vim.api.nvim_buf_set_option(M.state.comments_buf, "swapfile", false)
+    vim.api.nvim_buf_set_name(M.state.comments_buf, "[PR Comments]")
+
+    -- Set up keymaps for new buffer
+    setup_comments_keymaps()
+  end
+
+  -- Initialize comment selection
+  if #M.state.comments > 0 and M.state.current_comment_idx == 0 then
+    M.state.current_comment_idx = 1
+  end
+
+  -- Render/update content
+  render_comments_buffer()
+
+  -- Open in a window if focus requested
+  if focus then
+    -- If review panel is open, open comments as a horizontal split below
+    if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+      vim.cmd("botright split")
+      vim.cmd("resize 12")
+    else
+      vim.cmd("botright split")
+      vim.cmd("resize 20")
+    end
+    M.state.comments_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(M.state.comments_win, M.state.comments_buf)
+
+    -- Window options
+    vim.api.nvim_win_set_option(M.state.comments_win, "number", false)
+    vim.api.nvim_win_set_option(M.state.comments_win, "relativenumber", false)
+    vim.api.nvim_win_set_option(M.state.comments_win, "signcolumn", "no")
+    vim.api.nvim_win_set_option(M.state.comments_win, "winfixheight", true)
+    vim.api.nvim_win_set_option(M.state.comments_win, "cursorline", true)
+  end
+end
+
+-- Legacy alias for backward compatibility
+function M.populate_quickfix(opts)
+  M.populate_comments_buffer(opts)
 end
 
 -- Add a new comment
@@ -415,12 +639,25 @@ function M.add_comment(opts)
   vim.cmd("split")
   vim.api.nvim_win_set_buf(0, buf)
 
+  -- When this buffer's window closes, return to comments window
+  vim.api.nvim_create_autocmd("BufWinLeave", {
+    buffer = buf,
+    once = true,
+    callback = function()
+      vim.schedule(function()
+        if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
+          vim.api.nvim_set_current_win(M.state.comments_win)
+        end
+      end)
+    end
+  })
+
   -- Track if comment has been submitted
   local submitted = false
 
   -- Helper to handle successful submission
   local function on_submit_success()
-    M.load_comments_async(M.state.pr_number)
+    M.load_comments_async(M.state.pr_number, { focus = false })
   end
 
   -- Helper to handle failed submission
@@ -1054,6 +1291,518 @@ function M.view_original()
   vim.notify(string.format("Showing %s at commit %s (line %d)", path, commit:sub(1, 8), line), vim.log.levels.INFO)
 end
 
+-- ============================================================================
+-- DIFF REVIEW FUNCTIONS
+-- ============================================================================
+
+-- Status icons for file list
+local STATUS_ICONS = {
+  added = "+",
+  removed = "-",
+  modified = "~",
+  renamed = "→",
+  copied = "C",
+}
+
+-- Render the file list buffer
+local function render_file_list()
+  if not M.state.file_list_buf or not vim.api.nvim_buf_is_valid(M.state.file_list_buf) then
+    return
+  end
+
+  local lines = {}
+  local current_idx = M.state.current_file_idx
+
+  for i, file in ipairs(M.state.files) do
+    local icon = STATUS_ICONS[file.status] or "?"
+    local marker = i == current_idx and "▶" or " "
+    local stats = ""
+    if file.additions > 0 or file.deletions > 0 then
+      stats = string.format(" +%d/-%d", file.additions, file.deletions)
+    end
+    table.insert(lines, string.format("%s %s %s%s", marker, icon, file.path, stats))
+  end
+
+  vim.api.nvim_buf_set_option(M.state.file_list_buf, "modifiable", true)
+  vim.api.nvim_buf_set_lines(M.state.file_list_buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(M.state.file_list_buf, "modifiable", false)
+
+  -- Move cursor to current file
+  if current_idx > 0 and M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    vim.api.nvim_win_set_cursor(M.state.file_list_win, { current_idx, 0 })
+  end
+end
+
+-- Forward declaration for create_file_list (defined later)
+local create_file_list
+
+-- Open diff for a specific file
+---@param idx number File index (1-based)
+---@return boolean success
+function M.open_file_diff(idx)
+  if idx < 1 or idx > #M.state.files then
+    return false
+  end
+
+  if not M.state.merge_base then
+    vim.notify("No merge base set. Run :GHPRReview first.", vim.log.levels.WARN)
+    return false
+  end
+
+  -- Check if review panel is open
+  if not M.state.file_list_win or not vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    vim.notify("Review panel not open. Run :GHPRReview first.", vim.log.levels.WARN)
+    return false
+  end
+
+  local file = M.state.files[idx]
+  M.state.current_file_idx = idx
+
+  -- Update file list highlighting
+  render_file_list()
+
+  -- Get the base version content
+  local base_content = {}
+  if file.status ~= "added" then
+    local git_ref = M.state.merge_base .. ":" .. file.path
+    base_content = vim.fn.systemlist({
+      "git", "show", git_ref
+    })
+    if vim.v.shell_error ~= 0 then
+      -- Debug: show what command failed
+      vim.notify(string.format("git show failed for: %s (error: %s)", git_ref, table.concat(base_content, " ")), vim.log.levels.WARN)
+      base_content = { "(file did not exist at base)" }
+    end
+  else
+    base_content = { "(new file)" }
+  end
+
+  -- Turn off diff mode in existing diff windows before closing
+  if M.state.diff_win_left and vim.api.nvim_win_is_valid(M.state.diff_win_left) then
+    vim.api.nvim_win_call(M.state.diff_win_left, function() vim.cmd("diffoff") end)
+    vim.api.nvim_win_close(M.state.diff_win_left, true)
+  end
+  if M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+    vim.api.nvim_win_call(M.state.diff_win_right, function() vim.cmd("diffoff") end)
+    vim.api.nvim_win_close(M.state.diff_win_right, true)
+  end
+  M.state.diff_win_left = nil
+  M.state.diff_win_right = nil
+
+  -- Delete existing base buffer if it exists
+  local base_buf_name = string.format("[BASE] %s", file.path)
+  local existing_base_buf = vim.fn.bufnr(base_buf_name)
+  if existing_base_buf ~= -1 then
+    vim.api.nvim_buf_delete(existing_base_buf, { force = true })
+  end
+
+  -- Create left buffer (base version)
+  local left_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(left_buf, 0, -1, false, base_content)
+  vim.api.nvim_buf_set_name(left_buf, base_buf_name)
+  vim.api.nvim_buf_set_option(left_buf, "modifiable", false)
+  vim.api.nvim_buf_set_option(left_buf, "buftype", "nofile")
+  local ft = vim.filetype.match({ filename = file.path })
+  if ft then
+    vim.api.nvim_buf_set_option(left_buf, "filetype", ft)
+  end
+
+  -- Determine right buffer (current version)
+  local right_buf
+  local using_real_file = false
+  if file.status ~= "removed" then
+    -- Use the actual file for LSP support
+    -- Use absolute path to avoid matching the [BASE] buffer
+    local abs_path = vim.fn.fnamemodify(file.path, ":p")
+    local existing_buf = vim.fn.bufnr("^" .. abs_path .. "$")
+    if existing_buf ~= -1 then
+      right_buf = existing_buf
+    else
+      -- Load the file into a new buffer (without opening in a window yet)
+      right_buf = vim.fn.bufadd(abs_path)
+      vim.fn.bufload(right_buf)
+    end
+    using_real_file = true
+  else
+    -- File was deleted, create a scratch buffer
+    local current_buf_name = string.format("[CURRENT] %s", file.path)
+    local existing_current_buf = vim.fn.bufnr(current_buf_name)
+    if existing_current_buf ~= -1 then
+      vim.api.nvim_buf_delete(existing_current_buf, { force = true })
+    end
+    right_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(right_buf, 0, -1, false, { "(file deleted)" })
+    vim.api.nvim_buf_set_name(right_buf, current_buf_name)
+    vim.api.nvim_buf_set_option(right_buf, "modifiable", false)
+    vim.api.nvim_buf_set_option(right_buf, "buftype", "nofile")
+  end
+
+  -- Set up windows: we want file_list | base | current (with comments below)
+  -- Close only the diff windows, preserving file list and comments
+  if M.state.diff_win_left and vim.api.nvim_win_is_valid(M.state.diff_win_left) then
+    vim.api.nvim_win_close(M.state.diff_win_left, true)
+  end
+  if M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+    vim.api.nvim_win_close(M.state.diff_win_right, true)
+  end
+  M.state.diff_win_left = nil
+  M.state.diff_win_right = nil
+
+  -- Go to file list and create the diff windows to the right
+  if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    vim.api.nvim_set_current_win(M.state.file_list_win)
+  end
+
+  -- Create left diff window with base buffer directly
+  vim.cmd("rightbelow vsplit")
+  M.state.diff_win_left = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(M.state.diff_win_left, left_buf)
+
+  -- Create right diff window with current buffer directly
+  vim.cmd("rightbelow vsplit")
+  M.state.diff_win_right = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(M.state.diff_win_right, right_buf)
+
+  -- Enable diff mode
+  vim.api.nvim_win_call(M.state.diff_win_left, function() vim.cmd("diffthis") end)
+  vim.api.nvim_win_call(M.state.diff_win_right, function() vim.cmd("diffthis") end)
+
+  -- Set window proportions: file list ~10%, diffs split remaining 50/50
+  local total_width = vim.o.columns
+  local file_list_width = math.max(math.floor(total_width * 0.10), 25)
+  local remaining_width = total_width - file_list_width - 2  -- account for separators
+  local diff_width = math.floor(remaining_width / 2)
+
+  vim.api.nvim_win_set_width(M.state.file_list_win, file_list_width)
+  vim.api.nvim_win_set_width(M.state.diff_win_left, diff_width)
+  vim.api.nvim_win_set_width(M.state.diff_win_right, diff_width)
+
+  -- Set up navigation keymaps in the diff buffers
+  local function setup_nav_keymaps(buf)
+    local opts = { buffer = buf, silent = true }
+    vim.keymap.set("n", "]f", function() M.next_file() end, opts)
+    vim.keymap.set("n", "[f", function() M.prev_file() end, opts)
+    vim.keymap.set("n", "q", function() M.close_review() end, opts)
+  end
+
+  setup_nav_keymaps(left_buf)
+  if not using_real_file then
+    setup_nav_keymaps(right_buf)
+  end
+
+  -- Focus on the right (current) window
+  vim.api.nvim_set_current_win(M.state.diff_win_right)
+  return true
+end
+
+-- Navigate to next file
+function M.next_file()
+  if M.state.current_file_idx < #M.state.files then
+    M.open_file_diff(M.state.current_file_idx + 1)
+  else
+    vim.notify("Already at last file", vim.log.levels.INFO)
+  end
+end
+
+-- Navigate to previous file
+function M.prev_file()
+  if M.state.current_file_idx > 1 then
+    M.open_file_diff(M.state.current_file_idx - 1)
+  else
+    vim.notify("Already at first file", vim.log.levels.INFO)
+  end
+end
+
+-- Reload diff for current file and restore the canonical layout if needed
+function M.reload_current_file()
+  -- Ensure we have PR data loaded
+  if not M.state.pr_number or #M.state.files == 0 then
+    vim.notify("No PR loaded. Run :GHPRReview first.", vim.log.levels.WARN)
+    return
+  end
+
+  -- Restore canonical layout: file list | diff windows | comments at bottom
+  M.restore_layout()
+
+  -- Open the current file (or first file if none selected)
+  local idx = M.state.current_file_idx
+  if idx < 1 or idx > #M.state.files then
+    idx = 1
+  end
+  M.open_file_diff(idx)
+end
+
+-- Restore the canonical review layout
+-- Layout: file list (left) | base diff | current diff
+--         comments buffer (bottom, full width)
+function M.restore_layout()
+  -- Close all review-related windows first for a clean slate
+  local windows_to_keep = {}
+
+  -- Check what we need to recreate
+  local need_file_list = not M.state.file_list_win or not vim.api.nvim_win_is_valid(M.state.file_list_win)
+  local need_comments = not M.state.comments_win or not vim.api.nvim_win_is_valid(M.state.comments_win)
+
+  -- If file list is missing, we need to recreate the whole layout
+  if need_file_list then
+    -- Close existing windows
+    if M.state.diff_win_left and vim.api.nvim_win_is_valid(M.state.diff_win_left) then
+      vim.api.nvim_win_close(M.state.diff_win_left, true)
+    end
+    if M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+      vim.api.nvim_win_close(M.state.diff_win_right, true)
+    end
+    if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
+      vim.api.nvim_win_close(M.state.comments_win, true)
+    end
+    M.state.diff_win_left = nil
+    M.state.diff_win_right = nil
+    M.state.comments_win = nil
+
+    -- Recreate the file list (this sets up the left panel)
+    create_file_list()
+    need_comments = true  -- Force recreate comments too
+  end
+
+  -- Ensure comments buffer exists and has content
+  if M.state.comments_buf == nil or not vim.api.nvim_buf_is_valid(M.state.comments_buf) then
+    -- Create the buffer but don't open window yet
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name:match("%[PR Comments%]$") then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end
+    end
+
+    M.state.comments_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_option(M.state.comments_buf, "buftype", "nofile")
+    vim.api.nvim_buf_set_option(M.state.comments_buf, "bufhidden", "hide")
+    vim.api.nvim_buf_set_option(M.state.comments_buf, "swapfile", false)
+    vim.api.nvim_buf_set_name(M.state.comments_buf, "[PR Comments]")
+
+    -- Render content
+    render_comments_buffer()
+    setup_comments_keymaps()
+  end
+
+  -- Create comments window at the bottom if needed
+  if need_comments then
+    -- Save current window to return to
+    local cur_win = vim.api.nvim_get_current_win()
+
+    -- Create comments window at the very bottom
+    vim.cmd("botright split")
+    vim.cmd("resize 12")
+    M.state.comments_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(M.state.comments_win, M.state.comments_buf)
+
+    -- Window options
+    vim.api.nvim_win_set_option(M.state.comments_win, "number", false)
+    vim.api.nvim_win_set_option(M.state.comments_win, "relativenumber", false)
+    vim.api.nvim_win_set_option(M.state.comments_win, "signcolumn", "no")
+    vim.api.nvim_win_set_option(M.state.comments_win, "winfixheight", true)
+    vim.api.nvim_win_set_option(M.state.comments_win, "cursorline", true)
+
+    -- Return to previous window
+    if vim.api.nvim_win_is_valid(cur_win) then
+      vim.api.nvim_set_current_win(cur_win)
+    end
+  end
+end
+
+-- Select a file in the review panel by path
+-- Returns true if file was found and opened successfully
+function M.select_file_by_path(path)
+  if not path or #M.state.files == 0 then
+    return false
+  end
+
+  for i, file in ipairs(M.state.files) do
+    if file.path == path then
+      return M.open_file_diff(i) or false
+    end
+  end
+  return false
+end
+
+-- Create the file list panel
+create_file_list = function()
+  -- Close existing review first if one is open
+  if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    M.close_review()
+  end
+
+  -- Delete existing buffer if it exists (use exact match)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if name:match("%[PR Files%]$") then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+
+  -- Create buffer
+  M.state.file_list_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(M.state.file_list_buf, "buftype", "nofile")
+  vim.api.nvim_buf_set_option(M.state.file_list_buf, "bufhidden", "wipe")
+  vim.api.nvim_buf_set_option(M.state.file_list_buf, "swapfile", false)
+  vim.api.nvim_buf_set_name(M.state.file_list_buf, "[PR Files]")
+
+  -- Create window on the left (about 10% width)
+  vim.cmd("topleft vsplit")
+  local file_list_width = math.floor(vim.o.columns * 0.10)
+  vim.cmd("vertical resize " .. math.max(file_list_width, 25))  -- minimum 25 cols
+  M.state.file_list_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(M.state.file_list_win, M.state.file_list_buf)
+
+  -- Window options
+  vim.api.nvim_win_set_option(M.state.file_list_win, "number", false)
+  vim.api.nvim_win_set_option(M.state.file_list_win, "relativenumber", false)
+  vim.api.nvim_win_set_option(M.state.file_list_win, "signcolumn", "no")
+  vim.api.nvim_win_set_option(M.state.file_list_win, "winfixwidth", true)
+
+  -- Render the file list
+  render_file_list()
+
+  -- Set up keymaps
+  local opts = { buffer = M.state.file_list_buf, silent = true }
+  vim.keymap.set("n", "<CR>", function()
+    local line = vim.fn.line(".")
+    M.open_file_diff(line)
+  end, opts)
+  vim.keymap.set("n", "j", "j", opts)
+  vim.keymap.set("n", "k", "k", opts)
+  vim.keymap.set("n", "]f", function() M.next_file() end, opts)
+  vim.keymap.set("n", "[f", function() M.prev_file() end, opts)
+  vim.keymap.set("n", "q", function() M.close_review() end, opts)
+
+  -- Return to a different window
+  vim.cmd("wincmd l")
+end
+
+-- Close the review UI
+function M.close_review()
+  -- Turn off diff mode in any windows that have it
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_is_valid(win) then
+      local ok = pcall(function()
+        vim.api.nvim_win_call(win, function()
+          vim.cmd("diffoff")
+        end)
+      end)
+    end
+  end
+
+  -- Close file list window
+  if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    vim.api.nvim_win_close(M.state.file_list_win, true)
+  end
+
+  -- Close diff windows
+  if M.state.diff_win_left and vim.api.nvim_win_is_valid(M.state.diff_win_left) then
+    vim.api.nvim_win_close(M.state.diff_win_left, true)
+  end
+  if M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+    -- Don't close if it's a real file buffer
+    local buf = vim.api.nvim_win_get_buf(M.state.diff_win_right)
+    local buftype = vim.api.nvim_buf_get_option(buf, "buftype")
+    if buftype == "nofile" then
+      vim.api.nvim_win_close(M.state.diff_win_right, true)
+    end
+  end
+
+  -- Reset state
+  M.state.file_list_buf = nil
+  M.state.file_list_win = nil
+  M.state.diff_win_left = nil
+  M.state.diff_win_right = nil
+  M.state.current_file_idx = 0
+
+  vim.notify("Review closed", vim.log.levels.INFO)
+end
+
+-- Start the diff review (load files and open UI)
+---@param pr_number number|nil PR number (uses current branch's PR if nil)
+function M.start_review(pr_number)
+  -- Get repo info
+  local owner, repo = api.get_repo()
+  if not owner or not repo then
+    vim.notify("Failed to detect repository. Are you in a git repo?", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Get PR number if not provided
+  if not pr_number then
+    local pr_info = vim.fn.system({ "gh", "pr", "view", "--json", "number", "-q", ".number" })
+    if vim.v.shell_error == 0 then
+      pr_number = tonumber(vim.trim(pr_info))
+    end
+  end
+
+  if not pr_number then
+    vim.ui.input({ prompt = "PR number: " }, function(input)
+      if input then
+        M.start_review(tonumber(input))
+      end
+    end)
+    return
+  end
+
+  M.state.owner = owner
+  M.state.repo = repo
+  M.state.pr_number = pr_number
+
+  vim.notify(string.format("Loading PR #%d...", pr_number), vim.log.levels.INFO)
+
+  -- Load files
+  api.get_pr_files_async(pr_number, function(result, err)
+    if err then
+      vim.notify("Failed to load PR files: " .. err, vim.log.levels.ERROR)
+      return
+    end
+
+    M.state.files = result.files
+    M.state.merge_base = result.merge_base
+
+    if #M.state.files == 0 then
+      vim.notify("No changed files in PR", vim.log.levels.INFO)
+      return
+    end
+
+    vim.notify(string.format("Loaded %d files (base: %s)", #M.state.files, result.merge_base:sub(1, 8)), vim.log.levels.INFO)
+
+    -- Create the UI: file list, then diff windows
+    create_file_list()
+    M.open_file_diff(1)
+
+    -- Load comments and show in unified layout when done
+    api.get_pr_comments_async(owner, repo, pr_number, function(comments_result, comments_err)
+      if comments_err then
+        vim.notify("Failed to load comments: " .. comments_err, vim.log.levels.WARN)
+        return
+      end
+
+      M.state.comments = parse_comments(comments_result)
+
+      -- Check for pending review
+      local pr = comments_result.data.repository.pullRequest
+      for _, review in ipairs(safe_get(pr, "reviews", "nodes") or {}) do
+        if review.state == "PENDING" then
+          M.state.pending_review = { id = review.id, databaseId = review.databaseId }
+          break
+        end
+      end
+
+      -- Create comments buffer and show it at the bottom
+      if #M.state.comments > 0 then
+        M.populate_comments_buffer({ focus = false })
+        -- Now show it in the layout
+        M.restore_layout()
+        vim.notify(string.format("Loaded %d comments", #M.state.comments), vim.log.levels.INFO)
+      end
+    end)
+  end)
+end
+
 -- Setup function
 function M.setup(opts)
   opts = opts or {}
@@ -1062,7 +1811,40 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("GHPRComments", function(args)
     local pr_number = args.args ~= "" and tonumber(args.args) or nil
     M.load_comments(pr_number)
-  end, { nargs = "?", desc = "Load PR comments into quickfix" })
+  end, { nargs = "?", desc = "Load PR comments" })
+
+  vim.api.nvim_create_user_command("GHPRCommentsClose", function()
+    M.close_comments()
+  end, { desc = "Close PR comments buffer" })
+
+  vim.api.nvim_create_user_command("GHPRNextComment", function()
+    M.next_comment()
+  end, { desc = "Go to next comment" })
+
+  vim.api.nvim_create_user_command("GHPRPrevComment", function()
+    M.prev_comment()
+  end, { desc = "Go to previous comment" })
+
+  vim.api.nvim_create_user_command("GHPRReview", function(args)
+    local pr_number = args.args ~= "" and tonumber(args.args) or nil
+    M.start_review(pr_number)
+  end, { nargs = "?", desc = "Start PR diff review" })
+
+  vim.api.nvim_create_user_command("GHPRReviewClose", function()
+    M.close_review()
+  end, { desc = "Close PR diff review" })
+
+  vim.api.nvim_create_user_command("GHPRNextFile", function()
+    M.next_file()
+  end, { desc = "Go to next file in review" })
+
+  vim.api.nvim_create_user_command("GHPRPrevFile", function()
+    M.prev_file()
+  end, { desc = "Go to previous file in review" })
+
+  vim.api.nvim_create_user_command("GHPRReloadFile", function()
+    M.reload_current_file()
+  end, { desc = "Reload diff for current file" })
 
   vim.api.nvim_create_user_command("GHPRCommentAdd", function()
     M.add_comment({
@@ -1103,31 +1885,6 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("GHPRUnreact", function()
     M.unreact_to_comment()
   end, { desc = "Remove reaction from selected comment" })
-
-  -- Set up quickfix keymaps
-  vim.api.nvim_create_autocmd("FileType", {
-    pattern = "qf",
-    callback = function()
-      local bufnr = vim.api.nvim_get_current_buf()
-
-      -- Only set up for our PR comments quickfix
-      local qf_title = vim.fn.getqflist({ title = 1 }).title or ""
-      if not qf_title:match("^PR #%d+ Comments") then
-        return
-      end
-
-      local map_opts = { buffer = bufnr, silent = true }
-      vim.keymap.set("n", "e", M.edit_comment, map_opts)
-      vim.keymap.set("n", "d", M.delete_comment, map_opts)
-      vim.keymap.set("n", "r", M.reply_to_thread, map_opts)
-      vim.keymap.set("n", "p", M.preview_comment, map_opts)
-      vim.keymap.set("n", "o", M.view_original, map_opts)
-      vim.keymap.set("n", "+", M.react_to_comment, map_opts)
-      vim.keymap.set("n", "-", M.unreact_to_comment, map_opts)
-      vim.keymap.set("n", "R", function() M.load_comments(M.state.pr_number) end, map_opts)
-      vim.keymap.set("n", "S", M.submit_review, map_opts)
-    end,
-  })
 end
 
 return M

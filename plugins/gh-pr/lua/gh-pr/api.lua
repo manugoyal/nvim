@@ -523,4 +523,50 @@ mutation {
   M.graphql_async(query, callback)
 end
 
+-- Get PR changed files and merge base (async)
+---@param pr_number number
+---@param callback function Called with (result, error) when complete
+---   result = { files = {{path, status, additions, deletions}}, merge_base = string }
+function M.get_pr_files_async(pr_number, callback)
+  -- Get files and base branch info
+  M.gh_async({
+    "pr", "view", tostring(pr_number),
+    "--json", "files,baseRefName,headRefOid"
+  }, function(result, err)
+    if err then
+      callback(nil, err)
+      return
+    end
+
+    local base_branch = result.baseRefName
+    -- Get merge-base
+    local merge_base_output = vim.fn.system({
+      "git", "merge-base", "origin/" .. base_branch, "HEAD"
+    })
+    if vim.v.shell_error ~= 0 then
+      callback(nil, "Failed to get merge-base: " .. merge_base_output)
+      return
+    end
+
+    local merge_base = vim.trim(merge_base_output)
+
+    -- Transform files into our format
+    local files = {}
+    for _, f in ipairs(result.files or {}) do
+      table.insert(files, {
+        path = f.path,
+        status = f.status or "modified",
+        additions = f.additions or 0,
+        deletions = f.deletions or 0,
+      })
+    end
+
+    callback({
+      files = files,
+      merge_base = merge_base,
+      head_ref = result.headRefOid,
+    }, nil)
+  end)
+end
+
 return M

@@ -164,6 +164,12 @@ end, { desc = "Open Diffview for current PR changes" })
 -- GitHub PR mappings
 vim.keymap.set('n', '<leader>ghc', "<cmd>GHPRComments<cr>", { desc = "Load GitHub PR comments" })
 vim.keymap.set('n', '<leader>gha', "<cmd>GHPRCommentAdd<cr>", { desc = "Add PR comment at cursor" })
+vim.keymap.set('n', '<leader>ghr', "<cmd>GHPRReview<cr>", { desc = "Start PR diff review" })
+vim.keymap.set('n', '<leader>ghn', "<cmd>GHPRNextFile<cr>", { desc = "Next file in PR review" })
+vim.keymap.set('n', '<leader>ghp', "<cmd>GHPRPrevFile<cr>", { desc = "Previous file in PR review" })
+vim.keymap.set('n', '<leader>gh.', "<cmd>GHPRReloadFile<cr>", { desc = "Reload current file diff" })
+vim.keymap.set('n', '<leader>gh]', "<cmd>GHPRNextComment<cr>", { desc = "Next PR comment" })
+vim.keymap.set('n', '<leader>gh[', "<cmd>GHPRPrevComment<cr>", { desc = "Previous PR comment" })
 
 -- fzf-lua mappings
 vim.keymap.set('n', '<leader>ff', "<cmd>FzfLua files<cr>", { desc = "Find files" })
