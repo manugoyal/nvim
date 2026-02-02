@@ -111,26 +111,6 @@ require("lazy").setup({
     end
   },
   {
-    "sindrets/diffview.nvim",
-    cmd = { "DiffviewOpen", "DiffviewClose" },
-    opts = {
-      -- This is the "magic" setting that enables LSP on the RHS
-      default_args = {
-        DiffviewOpen = { "--imply-local" },
-      },
-      enhanced_diff_hl = true, -- Better syntax highlighting
-      use_icons = true,
-      icons = {
-        folder_closed = "",
-        folder_open = "",
-      },
-      view = {
-        -- Use horizontal layout for side-by-side diff (left/right panes)
-        default = { layout = "diff2_horizontal" },
-      },
-    },
-  },
-  {
     dir = vim.fn.stdpath("config") .. "/plugins/gh-pr",
     config = function()
       require("gh-pr").setup()
