@@ -629,6 +629,10 @@ function M.add_comment(opts)
     vim.api.nvim_buf_delete(existing_buf, { force = true })
   end
 
+  -- Remember the window to return to after closing the comment buffer
+  -- For replies, return to comments window; for new comments, return to original window
+  local return_win = opts.reply_to_thread and M.state.comments_win or vim.api.nvim_get_current_win()
+
   -- Create a scratch buffer for editing the comment
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_option(buf, "buftype", "acwrite")
@@ -639,14 +643,14 @@ function M.add_comment(opts)
   vim.cmd("split")
   vim.api.nvim_win_set_buf(0, buf)
 
-  -- When this buffer's window closes, return to comments window
+  -- When this buffer's window closes, return to the appropriate window
   vim.api.nvim_create_autocmd("BufWinLeave", {
     buffer = buf,
     once = true,
     callback = function()
       vim.schedule(function()
-        if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
-          vim.api.nvim_set_current_win(M.state.comments_win)
+        if return_win and vim.api.nvim_win_is_valid(return_win) then
+          vim.api.nvim_set_current_win(return_win)
         end
       end)
     end
