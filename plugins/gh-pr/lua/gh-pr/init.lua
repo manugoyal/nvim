@@ -532,34 +532,55 @@ local function setup_comments_keymaps()
   vim.keymap.set("n", "q", M.close_comments, map_opts)
 end
 
+-- Ensure comments buffer exists and is configured
+local function ensure_comments_buffer()
+  if M.state.comments_buf and vim.api.nvim_buf_is_valid(M.state.comments_buf) then
+    return
+  end
+
+  -- Delete any stale buffers with this name
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if name:match("%[PR Comments%]$") then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+
+  -- Create buffer (use "hide" so buffer persists when window closes)
+  M.state.comments_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(M.state.comments_buf, "buftype", "nofile")
+  vim.api.nvim_buf_set_option(M.state.comments_buf, "bufhidden", "hide")
+  vim.api.nvim_buf_set_option(M.state.comments_buf, "swapfile", false)
+  vim.api.nvim_buf_set_name(M.state.comments_buf, "[PR Comments]")
+
+  -- Set up keymaps for new buffer
+  setup_comments_keymaps()
+end
+
+-- Create comments window with standard options
+-- @param height number Window height (default 12)
+local function create_comments_window(height)
+  height = height or 12
+  vim.cmd("botright split")
+  vim.cmd("resize " .. height)
+  M.state.comments_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(M.state.comments_win, M.state.comments_buf)
+
+  -- Window options
+  vim.api.nvim_win_set_option(M.state.comments_win, "number", false)
+  vim.api.nvim_win_set_option(M.state.comments_win, "relativenumber", false)
+  vim.api.nvim_win_set_option(M.state.comments_win, "signcolumn", "no")
+  vim.api.nvim_win_set_option(M.state.comments_win, "winfixheight", true)
+  vim.api.nvim_win_set_option(M.state.comments_win, "cursorline", true)
+end
+
 -- Populate comments buffer (replaces quickfix)
 ---@param opts table|nil {focus: boolean} whether to focus comments buffer (default true)
 function M.populate_comments_buffer(opts)
   opts = opts or {}
   local focus = opts.focus ~= false  -- default to true
 
-  -- Reuse existing buffer if valid, otherwise create new one
-  local need_new_buffer = not M.state.comments_buf or not vim.api.nvim_buf_is_valid(M.state.comments_buf)
-
-  if need_new_buffer then
-    -- Delete any stale buffers with this name
-    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-      local name = vim.api.nvim_buf_get_name(buf)
-      if name:match("%[PR Comments%]$") then
-        pcall(vim.api.nvim_buf_delete, buf, { force = true })
-      end
-    end
-
-    -- Create buffer (use "hide" so buffer persists when window closes)
-    M.state.comments_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(M.state.comments_buf, "buftype", "nofile")
-    vim.api.nvim_buf_set_option(M.state.comments_buf, "bufhidden", "hide")
-    vim.api.nvim_buf_set_option(M.state.comments_buf, "swapfile", false)
-    vim.api.nvim_buf_set_name(M.state.comments_buf, "[PR Comments]")
-
-    -- Set up keymaps for new buffer
-    setup_comments_keymaps()
-  end
+  ensure_comments_buffer()
 
   -- Initialize comment selection
   if #M.state.comments > 0 and M.state.current_comment_idx == 0 then
@@ -571,23 +592,8 @@ function M.populate_comments_buffer(opts)
 
   -- Open in a window if focus requested
   if focus then
-    -- If review panel is open, open comments as a horizontal split below
-    if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
-      vim.cmd("botright split")
-      vim.cmd("resize 12")
-    else
-      vim.cmd("botright split")
-      vim.cmd("resize 20")
-    end
-    M.state.comments_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.state.comments_win, M.state.comments_buf)
-
-    -- Window options
-    vim.api.nvim_win_set_option(M.state.comments_win, "number", false)
-    vim.api.nvim_win_set_option(M.state.comments_win, "relativenumber", false)
-    vim.api.nvim_win_set_option(M.state.comments_win, "signcolumn", "no")
-    vim.api.nvim_win_set_option(M.state.comments_win, "winfixheight", true)
-    vim.api.nvim_win_set_option(M.state.comments_win, "cursorline", true)
+    local height = M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) and 12 or 20
+    create_comments_window(height)
   end
 end
 
@@ -1308,6 +1314,29 @@ local STATUS_ICONS = {
   copied = "C",
 }
 
+-- Set window proportions for the review layout
+-- Layout: file list ~10%, diffs split remaining 50/50
+local function set_review_window_proportions()
+  if not M.state.file_list_win or not vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    return
+  end
+  if not M.state.diff_win_left or not vim.api.nvim_win_is_valid(M.state.diff_win_left) then
+    return
+  end
+  if not M.state.diff_win_right or not vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+    return
+  end
+
+  local total_width = vim.o.columns
+  local file_list_width = math.max(math.floor(total_width * 0.10), 25)
+  local remaining_width = total_width - file_list_width - 2  -- account for separators
+  local diff_width = math.floor(remaining_width / 2)
+
+  vim.api.nvim_win_set_width(M.state.file_list_win, file_list_width)
+  vim.api.nvim_win_set_width(M.state.diff_win_left, diff_width)
+  vim.api.nvim_win_set_width(M.state.diff_win_right, diff_width)
+end
+
 -- Render the file list buffer
 local function render_file_list()
   if not M.state.file_list_buf or not vim.api.nvim_buf_is_valid(M.state.file_list_buf) then
@@ -1471,15 +1500,8 @@ function M.open_file_diff(idx)
   vim.api.nvim_win_call(M.state.diff_win_left, function() vim.cmd("diffthis") end)
   vim.api.nvim_win_call(M.state.diff_win_right, function() vim.cmd("diffthis") end)
 
-  -- Set window proportions: file list ~10%, diffs split remaining 50/50
-  local total_width = vim.o.columns
-  local file_list_width = math.max(math.floor(total_width * 0.10), 25)
-  local remaining_width = total_width - file_list_width - 2  -- account for separators
-  local diff_width = math.floor(remaining_width / 2)
-
-  vim.api.nvim_win_set_width(M.state.file_list_win, file_list_width)
-  vim.api.nvim_win_set_width(M.state.diff_win_left, diff_width)
-  vim.api.nvim_win_set_width(M.state.diff_win_right, diff_width)
+  -- Set window proportions
+  set_review_window_proportions()
 
   -- Set up navigation keymaps in the diff buffers
   local function setup_nav_keymaps(buf)
@@ -1517,101 +1539,99 @@ function M.prev_file()
   end
 end
 
--- Reload diff for current file and restore the canonical layout if needed
+-- Reload diff for current file and restore the canonical layout
 function M.reload_current_file()
-  -- Ensure we have PR data loaded
+  -- restore_layout() handles all the work including opening the current file
+  M.restore_layout()
+end
+
+-- Restore the canonical review layout (complete reset)
+-- Layout: file list (left) | base diff | current diff
+--         comments buffer (bottom, full width)
+function M.restore_layout()
+  -- Ensure we have PR data
   if not M.state.pr_number or #M.state.files == 0 then
     vim.notify("No PR loaded. Run :GHPRReview first.", vim.log.levels.WARN)
     return
   end
 
-  -- Restore canonical layout: file list | diff windows | comments at bottom
-  M.restore_layout()
+  -- Turn off diff mode in all windows first
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(function()
+        vim.api.nvim_win_call(win, function() vim.cmd("diffoff") end)
+      end)
+    end
+  end
 
-  -- Open the current file (or first file if none selected)
+  -- Collect windows to close (we'll close them after creating new ones)
+  local windows_to_close = {}
+  if M.state.diff_win_left and vim.api.nvim_win_is_valid(M.state.diff_win_left) then
+    table.insert(windows_to_close, M.state.diff_win_left)
+  end
+  if M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
+    table.insert(windows_to_close, M.state.diff_win_right)
+  end
+  if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
+    table.insert(windows_to_close, M.state.comments_win)
+  end
+  if M.state.file_list_win and vim.api.nvim_win_is_valid(M.state.file_list_win) then
+    table.insert(windows_to_close, M.state.file_list_win)
+  end
+
+  -- Reset window state
+  M.state.diff_win_left = nil
+  M.state.diff_win_right = nil
+  M.state.comments_win = nil
+  M.state.file_list_win = nil
+
+  -- Create a NEW split window first to ensure we never close the last window
+  vim.cmd("new")
+  local scratch_win = vim.api.nvim_get_current_win()
+
+  -- Now close old windows (safe because we just created a new one)
+  for _, win in ipairs(windows_to_close) do
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+  end
+
+  -- Recreate the file list (left panel)
+  create_file_list()
+
+  -- Open the current file diff (or first file if none selected)
   local idx = M.state.current_file_idx
   if idx < 1 or idx > #M.state.files then
     idx = 1
   end
   M.open_file_diff(idx)
-end
 
--- Restore the canonical review layout
--- Layout: file list (left) | base diff | current diff
---         comments buffer (bottom, full width)
-function M.restore_layout()
-  -- Close all review-related windows first for a clean slate
-  local windows_to_keep = {}
+  -- Create comments buffer and window
+  ensure_comments_buffer()
+  render_comments_buffer()
+  local cur_win = vim.api.nvim_get_current_win()
+  create_comments_window(12)
 
-  -- Check what we need to recreate
-  local need_file_list = not M.state.file_list_win or not vim.api.nvim_win_is_valid(M.state.file_list_win)
-  local need_comments = not M.state.comments_win or not vim.api.nvim_win_is_valid(M.state.comments_win)
-
-  -- If file list is missing, we need to recreate the whole layout
-  if need_file_list then
-    -- Close existing windows
-    if M.state.diff_win_left and vim.api.nvim_win_is_valid(M.state.diff_win_left) then
-      vim.api.nvim_win_close(M.state.diff_win_left, true)
-    end
-    if M.state.diff_win_right and vim.api.nvim_win_is_valid(M.state.diff_win_right) then
-      vim.api.nvim_win_close(M.state.diff_win_right, true)
-    end
-    if M.state.comments_win and vim.api.nvim_win_is_valid(M.state.comments_win) then
-      vim.api.nvim_win_close(M.state.comments_win, true)
-    end
-    M.state.diff_win_left = nil
-    M.state.diff_win_right = nil
-    M.state.comments_win = nil
-
-    -- Recreate the file list (this sets up the left panel)
-    create_file_list()
-    need_comments = true  -- Force recreate comments too
+  -- Return to previous window (likely the right diff pane)
+  if vim.api.nvim_win_is_valid(cur_win) then
+    vim.api.nvim_set_current_win(cur_win)
   end
 
-  -- Ensure comments buffer exists and has content
-  if M.state.comments_buf == nil or not vim.api.nvim_buf_is_valid(M.state.comments_buf) then
-    -- Create the buffer but don't open window yet
-    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-      local name = vim.api.nvim_buf_get_name(buf)
-      if name:match("%[PR Comments%]$") then
-        pcall(vim.api.nvim_buf_delete, buf, { force = true })
-      end
-    end
-
-    M.state.comments_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(M.state.comments_buf, "buftype", "nofile")
-    vim.api.nvim_buf_set_option(M.state.comments_buf, "bufhidden", "hide")
-    vim.api.nvim_buf_set_option(M.state.comments_buf, "swapfile", false)
-    vim.api.nvim_buf_set_name(M.state.comments_buf, "[PR Comments]")
-
-    -- Render content
-    render_comments_buffer()
-    setup_comments_keymaps()
-  end
-
-  -- Create comments window at the bottom if needed
-  if need_comments then
-    -- Save current window to return to
-    local cur_win = vim.api.nvim_get_current_win()
-
-    -- Create comments window at the very bottom
-    vim.cmd("botright split")
-    vim.cmd("resize 12")
-    M.state.comments_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(M.state.comments_win, M.state.comments_buf)
-
-    -- Window options
-    vim.api.nvim_win_set_option(M.state.comments_win, "number", false)
-    vim.api.nvim_win_set_option(M.state.comments_win, "relativenumber", false)
-    vim.api.nvim_win_set_option(M.state.comments_win, "signcolumn", "no")
-    vim.api.nvim_win_set_option(M.state.comments_win, "winfixheight", true)
-    vim.api.nvim_win_set_option(M.state.comments_win, "cursorline", true)
-
-    -- Return to previous window
-    if vim.api.nvim_win_is_valid(cur_win) then
-      vim.api.nvim_set_current_win(cur_win)
+  -- Clean up any windows that aren't part of our layout
+  local valid_windows = {
+    [M.state.file_list_win] = true,
+    [M.state.diff_win_left] = true,
+    [M.state.diff_win_right] = true,
+    [M.state.comments_win] = true,
+  }
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if not valid_windows[win] and vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
     end
   end
+
+  -- Final proportion adjustment after cleanup
+  set_review_window_proportions()
 end
 
 -- Select a file in the review panel by path
@@ -1796,13 +1816,10 @@ function M.start_review(pr_number)
         end
       end
 
-      -- Create comments buffer and show it at the bottom
-      if #M.state.comments > 0 then
-        M.populate_comments_buffer({ focus = false })
-        -- Now show it in the layout
-        M.restore_layout()
-        vim.notify(string.format("Loaded %d comments", #M.state.comments), vim.log.levels.INFO)
-      end
+      -- Always show comments panel (even if empty, so layout is consistent)
+      -- restore_layout recreates all windows with comments at bottom
+      M.restore_layout()
+      vim.notify(string.format("Loaded %d comments", #M.state.comments), vim.log.levels.INFO)
     end)
   end)
 end

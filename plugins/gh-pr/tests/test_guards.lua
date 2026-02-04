@@ -82,6 +82,30 @@ local function test()
     print("FAIL: close_comments errored with nil buffer")
   end
 
+  -- Test 7: restore_layout without PR data
+  print("\n7. Testing restore_layout without PR data...")
+  ghpr.state.pr_number = nil
+  ghpr.state.files = {}
+
+  ok = pcall(ghpr.restore_layout)
+  if ok then
+    print("PASS: restore_layout handles no PR data gracefully")
+  else
+    print("FAIL: restore_layout errored without PR data")
+  end
+
+  -- Test 8: reload_current_file without PR data (calls restore_layout)
+  print("\n8. Testing reload_current_file without PR data...")
+  ghpr.state.pr_number = nil
+  ghpr.state.files = {}
+
+  ok = pcall(ghpr.reload_current_file)
+  if ok then
+    print("PASS: reload_current_file handles no PR data gracefully")
+  else
+    print("FAIL: reload_current_file errored without PR data")
+  end
+
   print("\n=== Guard condition tests completed ===")
   return true
 end

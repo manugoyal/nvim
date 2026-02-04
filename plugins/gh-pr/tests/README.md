@@ -16,6 +16,7 @@ nvim --headless -u ~/.config/nvim/init.lua -c "luafile tests/test_basic.lua"
 nvim --headless -u ~/.config/nvim/init.lua -c "luafile tests/test_comments_buffer.lua"
 nvim --headless -u ~/.config/nvim/init.lua -c "luafile tests/test_buffer_reuse.lua"
 nvim --headless -u ~/.config/nvim/init.lua -c "luafile tests/test_guards.lua"
+nvim --headless -u ~/.config/nvim/init.lua -c "luafile tests/test_layout.lua"
 ```
 
 Or run them all in sequence:
@@ -75,6 +76,16 @@ Tests guard conditions and error handling:
 - `next_comment`/`prev_comment` with no comments doesn't error
 - `get_current_comment` with invalid index returns nil
 - `close_comments` with no buffer doesn't error
+- `restore_layout` without PR data doesn't error
+- `reload_current_file` without PR data doesn't error
+
+### test_layout.lua
+Tests layout restoration functionality:
+- `restore_layout` requires PR data
+- `restore_layout` handles missing PR number
+- `reload_current_file` delegates to `restore_layout`
+- `populate_comments_buffer` creates valid buffer
+- Comments buffer is reused on repopulate
 
 ## Manual Testing with Real PRs
 
