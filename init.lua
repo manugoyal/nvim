@@ -81,7 +81,7 @@ require("lazy").setup({
     end
   },
   {
-    dir = vim.fn.stdpath("config") .. "/plugins/githubify",
+    "manugoyal/githubify",
     config = function()
       require("githubify").setup()
     end,
