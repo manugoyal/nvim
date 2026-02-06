@@ -80,7 +80,12 @@ require("lazy").setup({
       })
     end
   },
-  "manugoyal/githubify",
+  {
+    dir = vim.fn.stdpath("config") .. "/plugins/githubify",
+    config = function()
+      require("githubify").setup()
+    end,
+  },
   "neovim/nvim-lspconfig",
   "nvim-lua/plenary.nvim",
   {

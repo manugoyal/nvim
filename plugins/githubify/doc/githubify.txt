@@ -1,0 +1,82 @@
+*githubify.txt*  githubify plugin
+
+githubify.nvim                                                  *githubify*
+
+Generate GitHub permalinks for the current buffer in Neovim.
+
+==============================================================================
+COMMANDS                                                     *githubify-commands*
+
+                                                         *:Githubify*
+:Githubify [commit] [use_lineno] [base_url]
+    Create a GitHub URL for the current file and print it.
+
+    Arguments are optional and positional:
+
+    commit (string)
+        Commit-ish to resolve with `git rev-parse`.
+        Default: `HEAD`
+
+    use_lineno (number)
+        If non-zero, append `#L<current line>`.
+        If zero, omit line anchor.
+        Default: `1`
+
+    base_url (string)
+        Override repository base URL.
+        Default: URL from `git remote get-url origin`
+
+    Side effects:
+    - Prints the generated URL in command output
+    - Attempts to copy URL to `+` and `*` registers
+
+==============================================================================
+EXAMPLES                                                     *githubify-examples*
+
+Use defaults:
+>
+    :Githubify
+<
+Link against a branch:
+>
+    :Githubify main
+<
+Skip line number:
+>
+    :Githubify HEAD 0
+<
+Override base URL (GitHub Enterprise):
+>
+    :Githubify HEAD 1 https://github.example.com/org/repo
+<
+
+==============================================================================
+BEHAVIOR                                                       *githubify-behavior*
+
+- Remote URLs like `git@github.com:org/repo.git` are normalized to
+  `https://github.com/org/repo`.
+- Relative file path is obtained via:
+  `git ls-files --full-name <abs_file_path>`
+- File path is URL-encoded before assembling permalink.
+
+==============================================================================
+REQUIREMENTS                                               *githubify-requirements*
+
+- Neovim 0.10+
+- `git` available in PATH
+- Current file must be tracked in a git repository
+
+==============================================================================
+TROUBLESHOOTING                                           *githubify-troubleshoot*
+
+`Githubify failed: ... not a git repository`
+    Current file is outside a git repository.
+
+`Githubify failed: Current file is not tracked by git`
+    Add/track the file first (`git add <file>`).
+
+`Githubify failed: ... unknown revision`
+    Commit argument is invalid. Check with `git rev-parse <commit>`.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:
