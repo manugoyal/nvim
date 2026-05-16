@@ -17,10 +17,12 @@ function M.await(async_fn, ...)
   async_fn(unpack(args))
 
   -- Wait for completion (timeout after 30 seconds)
-  vim.wait(30000, function() return done end, 10)
+  vim.wait(30000, function()
+    return done
+  end, 10)
 
   if not done then
-    return nil, "Timeout waiting for API response"
+    return nil, 'Timeout waiting for API response'
   end
 
   return result, err
@@ -30,7 +32,7 @@ end
 ---@param args string[] Arguments to pass to gh
 ---@param callback function Called with (output, error) when complete
 function M.gh_async_raw(args, callback)
-  local cmd = { "gh" }
+  local cmd = { 'gh' }
   for _, arg in ipairs(args) do
     table.insert(cmd, arg)
   end
@@ -44,7 +46,7 @@ function M.gh_async_raw(args, callback)
     on_stdout = function(_, data)
       if data then
         for _, line in ipairs(data) do
-          if line ~= "" then
+          if line ~= '' then
             table.insert(stdout_chunks, line)
           end
         end
@@ -53,7 +55,7 @@ function M.gh_async_raw(args, callback)
     on_stderr = function(_, data)
       if data then
         for _, line in ipairs(data) do
-          if line ~= "" then
+          if line ~= '' then
             table.insert(stderr_chunks, line)
           end
         end
@@ -62,10 +64,10 @@ function M.gh_async_raw(args, callback)
     on_exit = function(_, exit_code)
       vim.schedule(function()
         if exit_code ~= 0 then
-          callback(nil, table.concat(stderr_chunks, "\n"))
+          callback(nil, table.concat(stderr_chunks, '\n'))
           return
         end
-        callback(vim.trim(table.concat(stdout_chunks, "\n")), nil)
+        callback(vim.trim(table.concat(stdout_chunks, '\n')), nil)
       end)
     end,
   })
@@ -75,7 +77,7 @@ end
 ---@param args string[] Arguments to pass to gh
 ---@param callback function Called with (result, error) when complete
 function M.gh_async(args, callback)
-  local cmd = { "gh" }
+  local cmd = { 'gh' }
   for _, arg in ipairs(args) do
     table.insert(cmd, arg)
   end
@@ -89,7 +91,7 @@ function M.gh_async(args, callback)
     on_stdout = function(_, data)
       if data then
         for _, line in ipairs(data) do
-          if line ~= "" then
+          if line ~= '' then
             table.insert(stdout_chunks, line)
           end
         end
@@ -98,7 +100,7 @@ function M.gh_async(args, callback)
     on_stderr = function(_, data)
       if data then
         for _, line in ipairs(data) do
-          if line ~= "" then
+          if line ~= '' then
             table.insert(stderr_chunks, line)
           end
         end
@@ -107,14 +109,14 @@ function M.gh_async(args, callback)
     on_exit = function(_, exit_code)
       vim.schedule(function()
         if exit_code ~= 0 then
-          callback(nil, table.concat(stderr_chunks, "\n"))
+          callback(nil, table.concat(stderr_chunks, '\n'))
           return
         end
 
-        local output = table.concat(stdout_chunks, "\n")
+        local output = table.concat(stdout_chunks, '\n')
         local ok, parsed = pcall(vim.json.decode, output)
         if not ok then
-          callback(nil, "Failed to parse JSON: " .. output)
+          callback(nil, 'Failed to parse JSON: ' .. output)
           return
         end
 
@@ -128,25 +130,27 @@ end
 ---@param query string
 ---@param callback function Called with (result, error) when complete
 function M.graphql_async(query, callback)
-  M.gh_async({ "api", "graphql", "-f", "query=" .. query }, callback)
+  M.gh_async({ 'api', 'graphql', '-f', 'query=' .. query }, callback)
 end
 
 -- Get repo owner and name from current git repo
 ---@return string|nil owner
 ---@return string|nil name
 function M.get_repo()
-  local output = vim.fn.system({ "gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner" })
+  local output =
+    vim.fn.system({ 'gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner' })
   if vim.v.shell_error ~= 0 then
     return nil, nil
   end
   output = vim.trim(output)
-  local owner, name = output:match("([^/]+)/(.+)")
+  local owner, name = output:match('([^/]+)/(.+)')
   return owner, name
 end
 
 -- GraphQL query for PR comments
 local function get_pr_comments_query(owner, repo, pr_number)
-  return string.format([[
+  return string.format(
+    [[
 query {
   repository(owner: "%s", name: "%s") {
     pullRequest(number: %d) {
@@ -212,7 +216,11 @@ query {
     }
   }
 }
-]], owner, repo, pr_number)
+]],
+    owner,
+    repo,
+    pr_number
+  )
 end
 
 -- Get all comments for a PR (async)
@@ -242,7 +250,7 @@ function M.get_or_create_pending_review_async(owner, repo, pr_number, callback)
 
     -- Find existing pending review (we filter by PENDING state in query, so just take first)
     for _, review in ipairs(pending_reviews) do
-      if review.state == "PENDING" then
+      if review.state == 'PENDING' then
         callback({ id = review.id, databaseId = review.databaseId }, nil)
         return
       end
@@ -251,18 +259,28 @@ function M.get_or_create_pending_review_async(owner, repo, pr_number, callback)
     -- No pending review found, create one
     -- First get the commit SHA (returns plain text, not JSON)
     M.gh_async_raw({
-      "pr", "view", tostring(pr_number), "--json", "commits", "-q", ".commits[-1].oid"
+      'pr',
+      'view',
+      tostring(pr_number),
+      '--json',
+      'commits',
+      '-q',
+      '.commits[-1].oid',
     }, function(commit_sha, commit_err)
       if commit_err then
-        callback(nil, "Failed to get commit SHA: " .. commit_err)
+        callback(nil, 'Failed to get commit SHA: ' .. commit_err)
         return
       end
 
       M.gh_async({
-        "api", string.format("repos/%s/%s/pulls/%d/reviews", owner, repo, pr_number),
-        "-X", "POST",
-        "-f", "commit_id=" .. commit_sha,
-        "-f", "body="
+        'api',
+        string.format('repos/%s/%s/pulls/%d/reviews', owner, repo, pr_number),
+        '-X',
+        'POST',
+        '-f',
+        'commit_id=' .. commit_sha,
+        '-f',
+        'body=',
       }, function(create_result, create_err)
         if create_err then
           callback(nil, create_err)
@@ -276,8 +294,9 @@ end
 
 -- GraphQL mutation for adding review thread
 local function add_review_thread_query(review_id, path, line, body, side)
-  side = side or "RIGHT"
-  return string.format([[
+  side = side or 'RIGHT'
+  return string.format(
+    [[
 mutation {
   addPullRequestReviewThread(input: {
     pullRequestReviewId: "%s"
@@ -299,7 +318,13 @@ mutation {
     }
   }
 }
-]], review_id, path, line, side, vim.json.encode(body))
+]],
+    review_id,
+    path,
+    line,
+    side,
+    vim.json.encode(body)
+  )
 end
 
 -- Add a new comment thread to a pending review (async)
@@ -315,11 +340,12 @@ end
 
 -- GraphQL mutation for replying to thread
 local function reply_to_thread_query(thread_id, body, review_id)
-  local review_field = ""
+  local review_field = ''
   if review_id then
     review_field = string.format('pullRequestReviewId: "%s"', review_id)
   end
-  return string.format([[
+  return string.format(
+    [[
 mutation {
   addPullRequestReviewThreadReply(input: {
     pullRequestReviewThreadId: "%s"
@@ -338,7 +364,11 @@ mutation {
     }
   }
 }
-]], thread_id, vim.json.encode(body), review_field)
+]],
+    thread_id,
+    vim.json.encode(body),
+    review_field
+  )
 end
 
 -- Reply to an existing thread (async)
@@ -358,8 +388,10 @@ end
 ---@param callback function Called with (result, error) when complete
 function M.add_issue_comment_async(owner, repo, pr_number, body, callback)
   M.gh_async({
-    "api", string.format("repos/%s/%s/issues/%d/comments", owner, repo, pr_number),
-    "-f", "body=" .. body
+    'api',
+    string.format('repos/%s/%s/issues/%d/comments', owner, repo, pr_number),
+    '-f',
+    'body=' .. body,
   }, callback)
 end
 
@@ -368,7 +400,8 @@ end
 ---@param body string New comment body
 ---@param callback function Called with (result, error) when complete
 function M.update_comment_async(comment_id, body, callback)
-  local query = string.format([[
+  local query = string.format(
+    [[
 mutation {
   updatePullRequestReviewComment(input: {
     pullRequestReviewCommentId: "%s"
@@ -380,7 +413,10 @@ mutation {
     }
   }
 }
-]], comment_id, vim.json.encode(body))
+]],
+    comment_id,
+    vim.json.encode(body)
+  )
 
   -- Try as review comment first
   M.graphql_async(query, function(result, err)
@@ -390,7 +426,8 @@ mutation {
     end
 
     -- Try as issue comment
-    local issue_query = string.format([[
+    local issue_query = string.format(
+      [[
 mutation {
   updateIssueComment(input: {
     id: "%s"
@@ -402,7 +439,10 @@ mutation {
     }
   }
 }
-]], comment_id, vim.json.encode(body))
+]],
+      comment_id,
+      vim.json.encode(body)
+    )
 
     M.graphql_async(issue_query, callback)
   end)
@@ -412,7 +452,8 @@ end
 ---@param comment_id string GraphQL node ID
 ---@param callback function Called with (success, error) when complete
 function M.delete_comment_async(comment_id, callback)
-  local query = string.format([[
+  local query = string.format(
+    [[
 mutation {
   deletePullRequestReviewComment(input: {
     id: "%s"
@@ -420,7 +461,9 @@ mutation {
     clientMutationId
   }
 }
-]], comment_id)
+]],
+    comment_id
+  )
 
   M.graphql_async(query, function(result, err)
     if not err and result and result.data and result.data.deletePullRequestReviewComment then
@@ -429,7 +472,8 @@ mutation {
     end
 
     -- Try as issue comment
-    local issue_query = string.format([[
+    local issue_query = string.format(
+      [[
 mutation {
   deleteIssueComment(input: {
     id: "%s"
@@ -437,7 +481,9 @@ mutation {
     clientMutationId
   }
 }
-]], comment_id)
+]],
+      comment_id
+    )
 
     M.graphql_async(issue_query, function(r, e)
       if e then
@@ -455,8 +501,9 @@ end
 ---@param body string|nil Optional review body
 ---@param callback function Called with (result, error) when complete
 function M.submit_review_async(review_id, event, body, callback)
-  body = body or ""
-  local query = string.format([[
+  body = body or ''
+  local query = string.format(
+    [[
 mutation {
   submitPullRequestReview(input: {
     pullRequestReviewId: "%s"
@@ -470,7 +517,11 @@ mutation {
     }
   }
 }
-]], review_id, event, vim.json.encode(body))
+]],
+    review_id,
+    event,
+    vim.json.encode(body)
+  )
 
   M.graphql_async(query, callback)
 end
@@ -480,7 +531,8 @@ end
 ---@param content string Reaction type: THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET, EYES
 ---@param callback function Called with (result, error) when complete
 function M.add_reaction_async(subject_id, content, callback)
-  local query = string.format([[
+  local query = string.format(
+    [[
 mutation {
   addReaction(input: {
     subjectId: "%s"
@@ -494,7 +546,10 @@ mutation {
     }
   }
 }
-]], subject_id, content)
+]],
+    subject_id,
+    content
+  )
 
   M.graphql_async(query, callback)
 end
@@ -504,7 +559,8 @@ end
 ---@param content string Reaction type: THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET, EYES
 ---@param callback function Called with (result, error) when complete
 function M.remove_reaction_async(subject_id, content, callback)
-  local query = string.format([[
+  local query = string.format(
+    [[
 mutation {
   removeReaction(input: {
     subjectId: "%s"
@@ -518,7 +574,10 @@ mutation {
     }
   }
 }
-]], subject_id, content)
+]],
+    subject_id,
+    content
+  )
 
   M.graphql_async(query, callback)
 end
@@ -530,8 +589,11 @@ end
 function M.get_pr_files_async(pr_number, callback)
   -- Get files and base branch info
   M.gh_async({
-    "pr", "view", tostring(pr_number),
-    "--json", "files,baseRefName,headRefOid"
+    'pr',
+    'view',
+    tostring(pr_number),
+    '--json',
+    'files,baseRefName,headRefOid',
   }, function(result, err)
     if err then
       callback(nil, err)
@@ -541,10 +603,13 @@ function M.get_pr_files_async(pr_number, callback)
     local base_branch = result.baseRefName
     -- Get merge-base
     local merge_base_output = vim.fn.system({
-      "git", "merge-base", "origin/" .. base_branch, "HEAD"
+      'git',
+      'merge-base',
+      'origin/' .. base_branch,
+      'HEAD',
     })
     if vim.v.shell_error ~= 0 then
-      callback(nil, "Failed to get merge-base: " .. merge_base_output)
+      callback(nil, 'Failed to get merge-base: ' .. merge_base_output)
       return
     end
 
@@ -555,7 +620,7 @@ function M.get_pr_files_async(pr_number, callback)
     for _, f in ipairs(result.files or {}) do
       table.insert(files, {
         path = f.path,
-        status = f.status or "modified",
+        status = f.status or 'modified',
         additions = f.additions or 0,
         deletions = f.deletions or 0,
       })

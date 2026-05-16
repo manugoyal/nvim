@@ -1,0 +1,6 @@
+[tools]
+stylua = "2.4.1"
+
+[tasks.fmt]
+description = "Format Lua files with StyLua"
+run = "stylua ."

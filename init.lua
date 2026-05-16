@@ -1,111 +1,111 @@
 -- Neovim Configuration
 
 -- Basic Options
-vim.opt.compatible = false      -- No vi compatibility (default in Neovim)
-vim.opt.hidden = true           -- Allow hidden buffers
-vim.opt.autoindent = true       -- Copy indent from previous line
-vim.opt.expandtab = true        -- Use spaces instead of tabs
-vim.opt.tabstop = 4             -- 4 spaces per tab
-vim.opt.shiftwidth = 4          -- 4 spaces for indentation
-vim.opt.hlsearch = false        -- No search highlighting
-vim.opt.textwidth = 80          -- 80 characters per line
-vim.opt.formatoptions = "cq"    -- Only auto-wrap comments and use 'gq'
-if vim.fn.executable("rg") == 1 then
-  vim.opt.grepprg = "rg --vimgrep --smart-case"
+vim.opt.compatible = false -- No vi compatibility (default in Neovim)
+vim.opt.hidden = true -- Allow hidden buffers
+vim.opt.autoindent = true -- Copy indent from previous line
+vim.opt.expandtab = true -- Use spaces instead of tabs
+vim.opt.tabstop = 4 -- 4 spaces per tab
+vim.opt.shiftwidth = 4 -- 4 spaces for indentation
+vim.opt.hlsearch = false -- No search highlighting
+vim.opt.textwidth = 80 -- 80 characters per line
+vim.opt.formatoptions = 'cq' -- Only auto-wrap comments and use 'gq'
+if vim.fn.executable('rg') == 1 then
+  vim.opt.grepprg = 'rg --vimgrep --smart-case'
 end
 
 -- Disable syntax and filetype features
-vim.cmd("syntax off")
-vim.cmd("filetype off")
-vim.cmd("filetype indent off")
+vim.cmd('syntax off')
+vim.cmd('filetype off')
+vim.cmd('filetype indent off')
 
 -- Note: fzf-lua automatically uses ripgrep for live_grep if available
 
 -- Python host configuration
 -- Use dedicated virtual environment for Neovim
-local venv_python = vim.fn.stdpath("config") .. "/venv/bin/python"
+local venv_python = vim.fn.stdpath('config') .. '/venv/bin/python'
 if vim.fn.executable(venv_python) == 1 then
-    vim.g.python3_host_prog = venv_python
+  vim.g.python3_host_prog = venv_python
 end
 
 -- Package Manager Setup (lazy.nvim)
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+local lazypath = vim.fn.stdpath('data') .. '/lazy/lazy.nvim'
 if not vim.loop.fs_stat(lazypath) then
   vim.fn.system({
-    "git",
-    "clone",
-    "--filter=blob:none",
-    "https://github.com/folke/lazy.nvim.git",
-    "--branch=stable",
+    'git',
+    'clone',
+    '--filter=blob:none',
+    'https://github.com/folke/lazy.nvim.git',
+    '--branch=stable',
     lazypath,
   })
 end
 vim.opt.rtp:prepend(lazypath)
 
 -- Plugin Configuration
-require("lazy").setup({
+require('lazy').setup({
   {
-    "ibhagwan/fzf-lua",
+    'ibhagwan/fzf-lua',
     config = function()
-      require("fzf-lua").setup({
+      require('fzf-lua').setup({
         defaults = {
           keymap = {
             fzf = {
               -- Ctrl+Q to select all items and accept (works in all pickers)
-              ["ctrl-q"] = "select-all+accept"
-            }
-          }
+              ['ctrl-q'] = 'select-all+accept',
+            },
+          },
         },
         files = {
           -- Use fd to find files, including in submodules
-          cmd = "fd --type f --hidden --follow --exclude .git",
+          cmd = 'fd --type f --hidden --follow --exclude .git',
         },
         git = {
           files = {
             -- Include submodules in git files search
-            cmd = "git ls-files --recurse-submodules",
+            cmd = 'git ls-files --recurse-submodules',
           },
         },
         grep = {
           -- Use rg with submodule support
-          rg_opts = "--column --line-number --no-heading --color=always --smart-case --max-columns=4096 --hidden --follow",
+          rg_opts = '--column --line-number --no-heading --color=always --smart-case --max-columns=4096 --hidden --follow',
           actions = {
             -- Ctrl+Q in live_grep sends all results to quickfix window
-            ["ctrl-q"] = { 
-              fn = require"fzf-lua".actions.file_sel_to_qf, 
-              prefix = "select-all" 
-            }
-          }
-        }
+            ['ctrl-q'] = {
+              fn = require('fzf-lua').actions.file_sel_to_qf,
+              prefix = 'select-all',
+            },
+          },
+        },
       })
-    end
-  },
-  {
-    "manugoyal/githubify",
-    config = function()
-      require("githubify").setup()
     end,
   },
-  "neovim/nvim-lspconfig",
-  "nvim-lua/plenary.nvim",
   {
-    "pmizio/typescript-tools.nvim",
+    'manugoyal/githubify',
+    config = function()
+      require('githubify').setup()
+    end,
+  },
+  'neovim/nvim-lspconfig',
+  'nvim-lua/plenary.nvim',
+  {
+    'pmizio/typescript-tools.nvim',
     dependencies = {
-      "nvim-lua/plenary.nvim",
-      "neovim/nvim-lspconfig"
+      'nvim-lua/plenary.nvim',
+      'neovim/nvim-lspconfig',
     },
     opts = {
-        on_attach = function(client, bufnr)
-          vim.keymap.set('n', 'gs', '<cmd>TSToolsGoToSourceDefinition<CR>', {
-              buffer = bufnr,
-              desc = "Go to Source Definition",
-          })
-        end,
-    }
+      on_attach = function(client, bufnr)
+        vim.keymap.set('n', 'gs', '<cmd>TSToolsGoToSourceDefinition<CR>', {
+          buffer = bufnr,
+          desc = 'Go to Source Definition',
+        })
+      end,
+    },
   },
   {
-    "Exafunction/codeium.vim",
-    event = "BufEnter",
+    'Exafunction/codeium.vim',
+    event = 'BufEnter',
     config = function()
       -- Disable default bindings
       vim.g.codeium_disable_bindings = 1
@@ -113,12 +113,12 @@ require("lazy").setup({
       vim.keymap.set('i', '<Tab>', function()
         return vim.fn['codeium#Accept']()
       end, { expr = true, silent = true })
-    end
+    end,
   },
   {
-    dir = vim.fn.stdpath("config") .. "/plugins/gh-pr",
+    dir = vim.fn.stdpath('config') .. '/plugins/gh-pr',
     config = function()
-      require("gh-pr").setup()
+      require('gh-pr').setup()
     end,
   },
 })
@@ -126,45 +126,45 @@ require("lazy").setup({
 -- Commands
 
 -- Open Diffview for the current PR (from merge-base to HEAD)
-vim.api.nvim_create_user_command("DiffviewPR", function()
-  local base_branch = vim.fn.system("gh pr view --json baseRefName -q .baseRefName")
+vim.api.nvim_create_user_command('DiffviewPR', function()
+  local base_branch = vim.fn.system('gh pr view --json baseRefName -q .baseRefName')
   if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to get PR base branch: " .. base_branch, vim.log.levels.ERROR)
+    vim.notify('Failed to get PR base branch: ' .. base_branch, vim.log.levels.ERROR)
     return
   end
   base_branch = vim.trim(base_branch)
 
-  local merge_base = vim.fn.system("git merge-base origin/" .. base_branch .. " HEAD")
+  local merge_base = vim.fn.system('git merge-base origin/' .. base_branch .. ' HEAD')
   if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to get merge-base: " .. merge_base, vim.log.levels.ERROR)
+    vim.notify('Failed to get merge-base: ' .. merge_base, vim.log.levels.ERROR)
     return
   end
   merge_base = vim.trim(merge_base)
 
-  vim.cmd("DiffviewOpen " .. merge_base)
-end, { desc = "Open Diffview for current PR changes" })
+  vim.cmd('DiffviewOpen ' .. merge_base)
+end, { desc = 'Open Diffview for current PR changes' })
 
 -- Key Mappings
 
 -- GitHub PR mappings
-vim.keymap.set('n', '<leader>ghc', "<cmd>GHPRComments<cr>", { desc = "Load GitHub PR comments" })
-vim.keymap.set('n', '<leader>gha', "<cmd>GHPRCommentAdd<cr>", { desc = "Add PR comment at cursor" })
-vim.keymap.set('n', '<leader>ghr', "<cmd>GHPRReview<cr>", { desc = "Start PR diff review" })
-vim.keymap.set('n', '<leader>ghn', "<cmd>GHPRNextFile<cr>", { desc = "Next file in PR review" })
-vim.keymap.set('n', '<leader>ghp', "<cmd>GHPRPrevFile<cr>", { desc = "Previous file in PR review" })
-vim.keymap.set('n', '<leader>gh.', "<cmd>GHPRReloadFile<cr>", { desc = "Reload current file diff" })
-vim.keymap.set('n', '<leader>gh]', "<cmd>GHPRNextComment<cr>", { desc = "Next PR comment" })
-vim.keymap.set('n', '<leader>gh[', "<cmd>GHPRPrevComment<cr>", { desc = "Previous PR comment" })
+vim.keymap.set('n', '<leader>ghc', '<cmd>GHPRComments<cr>', { desc = 'Load GitHub PR comments' })
+vim.keymap.set('n', '<leader>gha', '<cmd>GHPRCommentAdd<cr>', { desc = 'Add PR comment at cursor' })
+vim.keymap.set('n', '<leader>ghr', '<cmd>GHPRReview<cr>', { desc = 'Start PR diff review' })
+vim.keymap.set('n', '<leader>ghn', '<cmd>GHPRNextFile<cr>', { desc = 'Next file in PR review' })
+vim.keymap.set('n', '<leader>ghp', '<cmd>GHPRPrevFile<cr>', { desc = 'Previous file in PR review' })
+vim.keymap.set('n', '<leader>gh.', '<cmd>GHPRReloadFile<cr>', { desc = 'Reload current file diff' })
+vim.keymap.set('n', '<leader>gh]', '<cmd>GHPRNextComment<cr>', { desc = 'Next PR comment' })
+vim.keymap.set('n', '<leader>gh[', '<cmd>GHPRPrevComment<cr>', { desc = 'Previous PR comment' })
 
 -- fzf-lua mappings
-vim.keymap.set('n', '<leader>ff', "<cmd>FzfLua files<cr>", { desc = "Find files" })
-vim.keymap.set('n', '<leader>fg', "<cmd>FzfLua git_files<cr>", { desc = "Find git files" })
-vim.keymap.set('n', '<leader>fb', "<cmd>FzfLua buffers<cr>", { desc = "Find buffers" })
-vim.keymap.set('n', '<leader>fl', "<cmd>FzfLua live_grep<cr>", { desc = "Live grep" })
-vim.keymap.set('n', '<leader>fw', "<cmd>FzfLua grep_cword<cr>", { desc = "Grep word under cursor" })
+vim.keymap.set('n', '<leader>ff', '<cmd>FzfLua files<cr>', { desc = 'Find files' })
+vim.keymap.set('n', '<leader>fg', '<cmd>FzfLua git_files<cr>', { desc = 'Find git files' })
+vim.keymap.set('n', '<leader>fb', '<cmd>FzfLua buffers<cr>', { desc = 'Find buffers' })
+vim.keymap.set('n', '<leader>fl', '<cmd>FzfLua live_grep<cr>', { desc = 'Live grep' })
+vim.keymap.set('n', '<leader>fw', '<cmd>FzfLua grep_cword<cr>', { desc = 'Grep word under cursor' })
 
 -- File explorer
-vim.keymap.set('n', '-', "<cmd>Explore<cr>", { desc = "Open netrw" })
+vim.keymap.set('n', '-', '<cmd>Explore<cr>', { desc = 'Open netrw' })
 
 -- Copy filepath to register (use with "x<leader>cp to copy to register x)
 vim.keymap.set('n', '<leader>cp', function()
@@ -172,7 +172,7 @@ vim.keymap.set('n', '<leader>cp', function()
   local reg = vim.v.register
   vim.fn.setreg(reg, filepath)
   print('Copied to register ' .. reg .. ': ' .. filepath)
-end, { desc = "Copy filepath to register" })
+end, { desc = 'Copy filepath to register' })
 
 -- Copy filepath:line to register (use with "x<leader>cl to copy to register x)
 vim.keymap.set('n', '<leader>cl', function()
@@ -182,13 +182,13 @@ vim.keymap.set('n', '<leader>cl', function()
   local reg = vim.v.register
   vim.fn.setreg(reg, location)
   print('Copied to register ' .. reg .. ': ' .. location)
-end, { desc = "Copy filepath:line to register" })
+end, { desc = 'Copy filepath:line to register' })
 
 -- Netrw Configuration
-vim.g.netrw_sort_sequence = "*"  -- Lexicographic sorting
+vim.g.netrw_sort_sequence = '*' -- Lexicographic sorting
 
 -- Disable LSP semantic highlights
-for _, group in ipairs(vim.fn.getcompletion("@lsp", "highlight")) do
+for _, group in ipairs(vim.fn.getcompletion('@lsp', 'highlight')) do
   vim.api.nvim_set_hl(0, group, {})
 end
 
@@ -200,10 +200,10 @@ vim.api.nvim_create_autocmd('LspAttach', {
   callback = function(ev)
     -- Enable completion triggered by <c-x><c-o>
     vim.bo[ev.buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
-    
+
     -- Disable LSP formatting for gq
     vim.bo[ev.buf].formatexpr = nil
-    
+
     -- Buffer local mappings
     local opts = { buffer = ev.buf }
     vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
@@ -225,15 +225,15 @@ vim.lsp.config.ty = {}
 vim.lsp.enable('rust_analyzer')
 vim.lsp.config.rust_analyzer = {
   settings = {
-    ["rust-analyzer"] = {
+    ['rust-analyzer'] = {
       check = {
-        command = "clippy"
+        command = 'clippy',
       },
       cargo = {
-        allFeatures = true
+        allFeatures = true,
       },
-    }
-  }
+    },
+  },
 }
 
 -- TypeScript/JavaScript (using typescript-tools.nvim)
