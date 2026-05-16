@@ -218,8 +218,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
 -- Language server configurations
 
 -- Python
-vim.lsp.enable('pyright')
-vim.lsp.config.pyright = {}
+vim.lsp.enable('ty')
+vim.lsp.config.ty = {}
 
 -- Rust
 vim.lsp.enable('rust_analyzer')
