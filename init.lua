@@ -89,21 +89,6 @@ require('lazy').setup({
   'neovim/nvim-lspconfig',
   'nvim-lua/plenary.nvim',
   {
-    'pmizio/typescript-tools.nvim',
-    dependencies = {
-      'nvim-lua/plenary.nvim',
-      'neovim/nvim-lspconfig',
-    },
-    opts = {
-      on_attach = function(client, bufnr)
-        vim.keymap.set('n', 'gs', '<cmd>TSToolsGoToSourceDefinition<CR>', {
-          buffer = bufnr,
-          desc = 'Go to Source Definition',
-        })
-      end,
-    },
-  },
-  {
     'Exafunction/codeium.vim',
     event = 'BufEnter',
     config = function()
@@ -194,10 +179,52 @@ end
 
 -- LSP Configuration
 
+local function vtsls_go_to_source_definition()
+  local client = vim.lsp.get_clients({ bufnr = 0, name = 'vtsls' })[1]
+  if not client then
+    vim.notify('vtsls is not attached to this buffer', vim.log.levels.WARN)
+    return
+  end
+
+  local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
+  client:request('workspace/executeCommand', {
+    command = 'typescript.goToSourceDefinition',
+    arguments = { params.textDocument.uri, params.position },
+  }, function(err, result)
+    if err then
+      vim.notify(
+        'vtsls source definition failed: ' .. (err.message or vim.inspect(err)),
+        vim.log.levels.ERROR
+      )
+      return
+    end
+
+    if not result or vim.tbl_isempty(result) then
+      vim.notify('No source definition found', vim.log.levels.INFO)
+      return
+    end
+
+    if #result == 1 then
+      vim.lsp.util.show_document(
+        result[1],
+        client.offset_encoding,
+        { focus = true, reuse_win = true }
+      )
+      return
+    end
+
+    local items = vim.lsp.util.locations_to_items(result, client.offset_encoding)
+    vim.fn.setqflist({}, ' ', { title = 'Source Definitions', items = items })
+    vim.cmd('botright copen')
+  end, 0)
+end
+
 -- LSP attach configuration
 vim.api.nvim_create_autocmd('LspAttach', {
   group = vim.api.nvim_create_augroup('UserLspConfig', {}),
   callback = function(ev)
+    local client = vim.lsp.get_client_by_id(ev.data.client_id)
+
     -- Enable completion triggered by <c-x><c-o>
     vim.bo[ev.buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
 
@@ -212,6 +239,13 @@ vim.api.nvim_create_autocmd('LspAttach', {
     vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
     vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, opts)
     vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
+
+    if client and client.name == 'vtsls' then
+      vim.keymap.set('n', 'gs', vtsls_go_to_source_definition, {
+        buffer = ev.buf,
+        desc = 'Go to Source Definition',
+      })
+    end
   end,
 })
 
@@ -236,5 +270,12 @@ vim.lsp.config.rust_analyzer = {
   },
 }
 
--- TypeScript/JavaScript (using typescript-tools.nvim)
--- Configuration handled by lazy.nvim opts
+-- TypeScript/JavaScript
+vim.lsp.config.vtsls = {
+  settings = {
+    vtsls = {
+      autoUseWorkspaceTsdk = true,
+    },
+  },
+}
+vim.lsp.enable('vtsls')
