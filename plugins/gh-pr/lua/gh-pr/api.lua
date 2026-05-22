@@ -1,6 +1,42 @@
 -- GitHub API calls via gh CLI
 local M = {}
 
+local function normalize_file_status(file)
+  local status = file.status or file.changeType or 'modified'
+  status = string.lower(status)
+  if status == 'deleted' then
+    return 'removed'
+  end
+  if status == 'changed' then
+    return 'modified'
+  end
+  return status
+end
+
+local function get_rename_map(base_ref)
+  local rename_map = {}
+  local output = vim.fn.systemlist({
+    'git',
+    'diff',
+    '--name-status',
+    '--find-renames',
+    base_ref .. '...HEAD',
+  })
+  if vim.v.shell_error ~= 0 then
+    return rename_map
+  end
+
+  for _, line in ipairs(output) do
+    local fields = vim.split(line, '\t', { plain = true })
+    local status = fields[1] or ''
+    if status:sub(1, 1) == 'R' and fields[2] and fields[3] then
+      rename_map[fields[3]] = fields[2]
+    end
+  end
+
+  return rename_map
+end
+
 -- Await helper: blocks until async operation completes
 -- Returns (result, error) from the callback
 -- Exported so callers can explicitly block on async functions when needed
@@ -585,7 +621,7 @@ end
 -- Get PR changed files and merge base (async)
 ---@param pr_number number
 ---@param callback function Called with (result, error) when complete
----   result = { files = {{path, status, additions, deletions}}, merge_base = string }
+---   result = { files = {{path, previous_path, status, additions, deletions}}, merge_base = string }
 function M.get_pr_files_async(pr_number, callback)
   -- Get files and base branch info
   M.gh_async({
@@ -614,13 +650,15 @@ function M.get_pr_files_async(pr_number, callback)
     end
 
     local merge_base = vim.trim(merge_base_output)
+    local rename_map = get_rename_map(merge_base)
 
     -- Transform files into our format
     local files = {}
     for _, f in ipairs(result.files or {}) do
       table.insert(files, {
         path = f.path,
-        status = f.status or 'modified',
+        previous_path = rename_map[f.path],
+        status = normalize_file_status(f),
         additions = f.additions or 0,
         deletions = f.deletions or 0,
       })

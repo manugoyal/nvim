@@ -26,7 +26,7 @@ M.state = {
   comments = {}, -- Parsed comments
   pending_review = nil, -- Current pending review {id, databaseId}
   -- Diff review state
-  files = {}, -- List of changed files {path, status, additions, deletions}
+  files = {}, -- List of changed files {path, previous_path, status, additions, deletions}
   merge_base = nil, -- Merge base commit
   current_file_idx = 0, -- Currently selected file (1-indexed, 0 = none)
   file_list_buf = nil, -- Buffer for file list
@@ -1467,9 +1467,10 @@ function M.open_file_diff(idx)
   render_file_list()
 
   -- Get the base version content
+  local base_path = file.previous_path or file.path
   local base_content = {}
   if file.status ~= 'added' then
-    local git_ref = M.state.merge_base .. ':' .. file.path
+    local git_ref = M.state.merge_base .. ':' .. base_path
     base_content = vim.fn.systemlist({
       'git',
       'show',
@@ -1508,7 +1509,7 @@ function M.open_file_diff(idx)
   M.state.diff_win_right = nil
 
   -- Delete existing base buffer if it exists
-  local base_buf_name = string.format('[BASE] %s', file.path)
+  local base_buf_name = string.format('[BASE] %s', base_path)
   local existing_base_buf = vim.fn.bufnr(base_buf_name)
   if existing_base_buf ~= -1 then
     vim.api.nvim_buf_delete(existing_base_buf, { force = true })
@@ -1520,7 +1521,7 @@ function M.open_file_diff(idx)
   vim.api.nvim_buf_set_name(left_buf, base_buf_name)
   vim.api.nvim_buf_set_option(left_buf, 'modifiable', false)
   vim.api.nvim_buf_set_option(left_buf, 'buftype', 'nofile')
-  local ft = vim.filetype.match({ filename = file.path })
+  local ft = vim.filetype.match({ filename = base_path })
   if ft then
     vim.api.nvim_buf_set_option(left_buf, 'filetype', ft)
   end
