@@ -89,18 +89,6 @@ require('lazy').setup({
   'neovim/nvim-lspconfig',
   'nvim-lua/plenary.nvim',
   {
-    'Exafunction/codeium.vim',
-    event = 'BufEnter',
-    config = function()
-      -- Disable default bindings
-      vim.g.codeium_disable_bindings = 1
-      -- Set up Tab for accepting suggestions
-      vim.keymap.set('i', '<Tab>', function()
-        return vim.fn['codeium#Accept']()
-      end, { expr = true, silent = true })
-    end,
-  },
-  {
     dir = vim.fn.stdpath('config') .. '/plugins/gh-pr',
     config = function()
       require('gh-pr').setup()
