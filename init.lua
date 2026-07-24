@@ -81,6 +81,20 @@ require('lazy').setup({
     end,
   },
   {
+    'folke/flash.nvim',
+    event = 'VeryLazy',
+    opts = {
+      modes = {
+        search = {
+          enabled = true,
+        },
+        char = {
+          enabled = false,
+        },
+      },
+    },
+  },
+  {
     'manugoyal/githubify',
     config = function()
       require('githubify').setup()
