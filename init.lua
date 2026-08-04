@@ -181,41 +181,39 @@ end
 
 -- LSP Configuration
 
-local function vtsls_go_to_source_definition()
-  local client = vim.lsp.get_clients({ bufnr = 0, name = 'vtsls' })[1]
+local function tsgo_source_definition()
+  local client = vim.lsp.get_clients({ bufnr = 0, name = 'tsgo' })[1]
   if not client then
-    vim.notify('vtsls is not attached to this buffer', vim.log.levels.WARN)
+    vim.notify('tsgo is not attached to this buffer', vim.log.levels.WARN)
     return
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  client:request('workspace/executeCommand', {
-    command = 'typescript.goToSourceDefinition',
-    arguments = { params.textDocument.uri, params.position },
-  }, function(err, result)
+  client:request('custom/textDocument/sourceDefinition', params, function(err, result)
     if err then
       vim.notify(
-        'vtsls source definition failed: ' .. (err.message or vim.inspect(err)),
+        'tsgo source definition failed: ' .. (err.message or vim.inspect(err)),
         vim.log.levels.ERROR
       )
       return
     end
 
-    if not result or vim.tbl_isempty(result) then
+    local locations = result and (vim.islist(result) and result or { result }) or {}
+    if #locations == 0 then
       vim.notify('No source definition found', vim.log.levels.INFO)
       return
     end
 
-    if #result == 1 then
+    if #locations == 1 then
       vim.lsp.util.show_document(
-        result[1],
+        locations[1],
         client.offset_encoding,
         { focus = true, reuse_win = true }
       )
       return
     end
 
-    local items = vim.lsp.util.locations_to_items(result, client.offset_encoding)
+    local items = vim.lsp.util.locations_to_items(locations, client.offset_encoding)
     vim.fn.setqflist({}, ' ', { title = 'Source Definitions', items = items })
     vim.cmd('botright copen')
   end, 0)
@@ -242,8 +240,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
     vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, opts)
     vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
 
-    if client and client.name == 'vtsls' then
-      vim.keymap.set('n', 'gs', vtsls_go_to_source_definition, {
+    if client and client.name == 'tsgo' then
+      vim.keymap.set('n', 'gs', tsgo_source_definition, {
         buffer = ev.buf,
         desc = 'Go to Source Definition',
       })
@@ -273,11 +271,7 @@ vim.lsp.config.rust_analyzer = {
 }
 
 -- TypeScript/JavaScript
-vim.lsp.config.vtsls = {
-  settings = {
-    vtsls = {
-      autoUseWorkspaceTsdk = true,
-    },
-  },
-}
-vim.lsp.enable('vtsls')
+vim.lsp.config('tsgo', {
+  cmd = { 'tsc', '--lsp', '--stdio' },
+})
+vim.lsp.enable('tsgo')
