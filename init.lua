@@ -181,10 +181,10 @@ end
 
 -- LSP Configuration
 
-local function tsgo_source_definition()
-  local client = vim.lsp.get_clients({ bufnr = 0, name = 'tsgo' })[1]
+local function tsc_source_definition()
+  local client = vim.lsp.get_clients({ bufnr = 0, name = 'tsc' })[1]
   if not client then
-    vim.notify('tsgo is not attached to this buffer', vim.log.levels.WARN)
+    vim.notify('tsc is not attached to this buffer', vim.log.levels.WARN)
     return
   end
 
@@ -192,7 +192,7 @@ local function tsgo_source_definition()
   client:request('custom/textDocument/sourceDefinition', params, function(err, result)
     if err then
       vim.notify(
-        'tsgo source definition failed: ' .. (err.message or vim.inspect(err)),
+        'tsc source definition failed: ' .. (err.message or vim.inspect(err)),
         vim.log.levels.ERROR
       )
       return
@@ -240,8 +240,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
     vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, opts)
     vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
 
-    if client and client.name == 'tsgo' then
-      vim.keymap.set('n', 'gs', tsgo_source_definition, {
+    if client and client.name == 'tsc' then
+      vim.keymap.set('n', 'gs', tsc_source_definition, {
         buffer = ev.buf,
         desc = 'Go to Source Definition',
       })
@@ -271,7 +271,7 @@ vim.lsp.config.rust_analyzer = {
 }
 
 -- TypeScript/JavaScript
-vim.lsp.config('tsgo', {
+vim.lsp.config('tsc', {
   cmd = { 'tsc', '--lsp', '--stdio' },
 })
-vim.lsp.enable('tsgo')
+vim.lsp.enable('tsc')
