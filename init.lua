@@ -103,6 +103,10 @@ require('lazy').setup({
   'neovim/nvim-lspconfig',
   'nvim-lua/plenary.nvim',
   {
+    'sindrets/diffview.nvim',
+    dependencies = { 'nvim-lua/plenary.nvim' },
+  },
+  {
     dir = vim.fn.stdpath('config') .. '/plugins/gh-pr',
     config = function()
       require('gh-pr').setup()
@@ -142,6 +146,17 @@ vim.keymap.set('n', '<leader>ghp', '<cmd>GHPRPrevFile<cr>', { desc = 'Previous f
 vim.keymap.set('n', '<leader>gh.', '<cmd>GHPRReloadFile<cr>', { desc = 'Reload current file diff' })
 vim.keymap.set('n', '<leader>gh]', '<cmd>GHPRNextComment<cr>', { desc = 'Next PR comment' })
 vim.keymap.set('n', '<leader>gh[', '<cmd>GHPRPrevComment<cr>', { desc = 'Previous PR comment' })
+
+-- Diffview mappings
+vim.keymap.set('n', '<leader>do', '<cmd>DiffviewOpen<cr>', { desc = 'Open Diffview' })
+vim.keymap.set('n', '<leader>dc', '<cmd>DiffviewClose<cr>', { desc = 'Close Diffview' })
+vim.keymap.set('n', '<leader>df', '<cmd>DiffviewFocusFiles<cr>', { desc = 'Focus Diffview files' })
+vim.keymap.set('n', '<leader>dn', function()
+  require('diffview.actions').select_next_entry()
+end, { desc = 'Next file in Diffview' })
+vim.keymap.set('n', '<leader>dp', function()
+  require('diffview.actions').select_prev_entry()
+end, { desc = 'Previous file in Diffview' })
 
 -- fzf-lua mappings
 vim.keymap.set('n', '<leader>ff', '<cmd>FzfLua files<cr>', { desc = 'Find files' })
