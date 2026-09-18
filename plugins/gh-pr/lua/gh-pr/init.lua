@@ -1860,9 +1860,26 @@ function M.start_review(pr_number)
 
   -- Get PR number if not provided
   if not pr_number then
-    local pr_info = vim.fn.system({ 'gh', 'pr', 'view', '--json', 'number', '-q', '.number' })
+    local branch = vim.fn.system({ 'git', 'branch', '--show-current' })
     if vim.v.shell_error == 0 then
-      pr_number = tonumber(vim.trim(pr_info))
+      branch = vim.trim(branch)
+      if branch ~= '' then
+        local pr_info = vim.fn.system({
+          'gh',
+          'pr',
+          'view',
+          branch,
+          '--repo',
+          string.format('%s/%s', owner, repo),
+          '--json',
+          'number',
+          '-q',
+          '.number',
+        })
+        if vim.v.shell_error == 0 then
+          pr_number = tonumber(vim.trim(pr_info))
+        end
+      end
     end
   end
 
