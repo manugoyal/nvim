@@ -264,7 +264,8 @@ vim.lsp.config.rust_analyzer = {
         command = 'clippy',
       },
       cargo = {
-        allFeatures = true,
+        allFeatures = false,
+        allTargets = false,
       },
     },
   },
