@@ -151,6 +151,7 @@ vim.keymap.set('n', '<leader>gh[', '<cmd>GHPRPrevComment<cr>', { desc = 'Previou
 vim.keymap.set('n', '<leader>do', '<cmd>DiffviewOpen<cr>', { desc = 'Open Diffview' })
 vim.keymap.set('n', '<leader>dc', '<cmd>DiffviewClose<cr>', { desc = 'Close Diffview' })
 vim.keymap.set('n', '<leader>df', '<cmd>DiffviewFocusFiles<cr>', { desc = 'Focus Diffview files' })
+vim.keymap.set('n', '<leader>dr', '<cmd>DiffviewRefresh<cr>', { desc = 'Refresh Diffview' })
 vim.keymap.set('n', '<leader>dn', function()
   require('diffview.actions').select_next_entry()
 end, { desc = 'Next file in Diffview' })
