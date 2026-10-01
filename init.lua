@@ -148,7 +148,7 @@ vim.keymap.set('n', '<leader>gh]', '<cmd>GHPRNextComment<cr>', { desc = 'Next PR
 vim.keymap.set('n', '<leader>gh[', '<cmd>GHPRPrevComment<cr>', { desc = 'Previous PR comment' })
 
 -- Diffview mappings
-vim.keymap.set('n', '<leader>do', '<cmd>DiffviewOpen<cr>', { desc = 'Open Diffview' })
+vim.keymap.set('n', '<leader>do', '<cmd>DiffviewOpen HEAD<cr>', { desc = 'Open Diffview against HEAD' })
 vim.keymap.set('n', '<leader>dc', '<cmd>DiffviewClose<cr>', { desc = 'Close Diffview' })
 vim.keymap.set('n', '<leader>df', '<cmd>DiffviewFocusFiles<cr>', { desc = 'Focus Diffview files' })
 vim.keymap.set('n', '<leader>dr', '<cmd>DiffviewRefresh<cr>', { desc = 'Refresh Diffview' })
