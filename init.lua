@@ -116,6 +116,10 @@ require('lazy').setup({
 
 -- Commands
 
+vim.api.nvim_create_user_command('ProjectProfiles', function()
+  vim.cmd.edit(require('project_profiles').path)
+end, { desc = 'Edit machine-local project tag assignments' })
+
 -- Open Diffview for the current PR (from merge-base to HEAD)
 vim.api.nvim_create_user_command('DiffviewPR', function()
   local base_branch = vim.fn.system('gh pr view --json baseRefName -q .baseRefName')
@@ -272,8 +276,18 @@ vim.lsp.enable('ty')
 vim.lsp.config.ty = {}
 
 -- Rust
+local rust_analyzer_before_init = vim.lsp.config.rust_analyzer.before_init
 vim.lsp.enable('rust_analyzer')
 vim.lsp.config.rust_analyzer = {
+  before_init = function(params, config)
+    -- Reset preset settings when restarting after a registry edit.
+    config.settings['rust-analyzer'] =
+      vim.deepcopy(vim.lsp.config.rust_analyzer.settings['rust-analyzer'])
+    require('project_profiles').apply(config)
+    if rust_analyzer_before_init then
+      rust_analyzer_before_init(params, config)
+    end
+  end,
   settings = {
     ['rust-analyzer'] = {
       check = {
