@@ -163,6 +163,33 @@ vim.keymap.set('n', '<leader>dp', function()
   require('diffview.actions').select_prev_entry()
 end, { desc = 'Previous file in Diffview' })
 
+local function navigate_review_file(direction)
+  if require('diffview.lib').get_current_view() then
+    require('diffview.actions')['select_' .. direction .. '_entry']()
+    return
+  end
+
+  local gh_pr = require('gh-pr')
+  local file_list_win = gh_pr.state.file_list_win
+  if
+    file_list_win
+    and vim.api.nvim_win_is_valid(file_list_win)
+    and vim.api.nvim_win_get_tabpage(file_list_win) == vim.api.nvim_get_current_tabpage()
+  then
+    gh_pr[direction .. '_file']()
+    return
+  end
+
+  vim.notify('No review open in this tab', vim.log.levels.INFO)
+end
+
+vim.keymap.set('n', '<Space>j', function()
+  navigate_review_file('next')
+end, { desc = 'Next file in current review' })
+vim.keymap.set('n', '<Space>k', function()
+  navigate_review_file('prev')
+end, { desc = 'Previous file in current review' })
+
 -- fzf-lua mappings
 vim.keymap.set('n', '<leader>ff', '<cmd>FzfLua files<cr>', { desc = 'Find files' })
 vim.keymap.set('n', '<leader>fg', '<cmd>FzfLua git_files<cr>', { desc = 'Find git files' })
